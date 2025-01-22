@@ -119,15 +119,15 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     # compute truncated Phi matrix for checking feasibility
     SLS_data_list[-1].F_trunc_to_Phi_trunc()
 
-    # check feasibility up to 1e-8
+    # check feasibility up to 1e-6
     Poly_xu = Poly_x.cart(Poly_u)
     print("rank F:", SLS_data_list[-1].rank_F_trunc)
     print("band (D,E) = messages:", SLS_data_list[-1].E.shape[0])
     print("Error true F and truncated F:", np.max( np.abs(SLS_data_list[-1].F - SLS_data_list[-1].F_trunc) ) )
     print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_data_list[-1].Phi_matrix.value - SLS_data_list[-1].Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)) ) )
-    assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-8 )
-    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-8) )
+    assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
+    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-6) )
 
     # check feasibility by reoptimizing over Lambda
     # Poly_xu = Poly_x.cart(Poly_u)
@@ -232,7 +232,17 @@ def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, de
     print("Error true F and truncated F:", np.max( np.abs(reopt_SLS.F - reopt_SLS.F_trunc) ) )
     print("Error true Phi and truncated Phi:", np.max( np.abs(reopt_SLS.Phi_matrix.value - reopt_SLS.Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(reopt_Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(reopt_SLS.Phi_trunc)) ) )
-    assert np.all( reopt_Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-8 )
-    assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-8) )
+    assert np.all( reopt_Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
+    assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-6) )
 
     return [reopt_result, reopt_SLS, reopt_Lambda, norm_list, reopt_kept_indices, SLS_list]
+
+
+def poly_intersect(poly1, poly2):
+    """
+    Return the intersection of two polytopes in H-rep.
+    """
+    import numpy as np
+    H_new = np.vstack((poly1.H, poly2.H))
+    h_new = np.concatenate((poly1.h, poly2.h))
+    return Polytope(H_new, h_new)

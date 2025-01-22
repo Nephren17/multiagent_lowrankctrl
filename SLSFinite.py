@@ -217,3 +217,46 @@ class SLSFinite():
         self.F_causal_row_basis = added_rows
         self.causal_time = time.time() - start
         return
+
+    def extract_sub_communication_matrix(self, direction='21'):
+        if self.F is None:
+            raise ValueError("self.F is not computed yet. Please run calculate_dependent_variables() first.")
+
+        block_size_out = 2
+        block_size_in  = 2
+
+        if direction == '21':
+            row_slice = slice(0, 2)
+            col_slice = slice(2, 4)
+        elif direction == '12':
+            row_slice = slice(2, 4)
+            col_slice = slice(0, 2)
+        else:
+            raise ValueError("direction must be '21' or '12'")
+
+        Tplus1 = self.T + 1
+        big_mat = np.zeros((block_size_out * Tplus1, block_size_in * Tplus1))
+
+        for t in range(Tplus1):
+            for tau in range(t+1):
+                F_block = self.F[t*self.nu : (t+1)*self.nu,
+                                tau*self.ny: (tau+1)*self.ny]
+                sub_2x2 = F_block[row_slice, col_slice]
+
+                row_offset = t * block_size_out
+                col_offset = tau * block_size_in
+                big_mat[row_offset : row_offset+block_size_out,
+                        col_offset : col_offset+block_size_in] = sub_2x2
+
+        return big_mat
+
+
+    def compute_communication_messages(self, rank_eps=1e-7):
+        L21 = self.extract_sub_communication_matrix(direction='21')
+        L12 = self.extract_sub_communication_matrix(direction='12')
+
+        rank_21 = np.linalg.matrix_rank(L21, tol=rank_eps)
+        rank_12 = np.linalg.matrix_rank(L12, tol=rank_eps)
+
+        return (rank_21, rank_12)
+

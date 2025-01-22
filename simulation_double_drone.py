@@ -40,6 +40,8 @@ max_x0 = 1
 max_v0 = 0
 box_x = 10
 
+comm_dist = 12
+
 center_times_uav1 = (T + 1) * [[0, 0, 0, 0]]
 center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
 radius_times_uav1 = (T + 1) * [[box_x, box_x, max_v, max_v]]
@@ -82,10 +84,21 @@ Poly_w = H_cube(center_times[0], radius_times[0]).cart(
     H_cube([0, 0, 0, 0, 0, 0, 0, 0], [wx_scale] * 4 + [wxdot_scale] * 4).cartpower(T)
 ).cart(H_cube([0, 0, 0, 0], [v_scale] * 4).cartpower(T + 1))
 
+H_comm = np.array([
+    [ 1,  1,  0,  0, -1, -1,  0,  0],  # (x1 - x2) + (y1 - y2) <= comm_dist
+    [ 1, -1,  0,  0, -1,  1,  0,  0],
+    [-1,  1,  0,  0,  1, -1,  0,  0],
+    [-1, -1,  0,  0,  1,  1,  0,  0],
+])
+h_comm = comm_dist * np.ones(4)
+Poly_comm_single = Polytope(H_comm, h_comm)
+Poly_comm = Poly_comm_single.cartpower(T + 1)
+Poly_x = poly_intersect(Poly_x, Poly_comm)
 
-print("Poly_w.H shape:", Poly_w.H.shape)
-print("Poly_x.H shape:", Poly_x.H.shape)
-print("Poly_u.H shape:", Poly_u.H.shape)
+
+# print("Poly_w.H shape:", Poly_w.H.shape)
+# print("Poly_x.H shape:", Poly_x.H.shape)
+# print("Poly_u.H shape:", Poly_u.H.shape)
 
 
 
@@ -506,6 +519,16 @@ print("number of nonzero rows = messages:", len(kept_act))
 print("Error true F and truncated F:", np.max( np.abs(SLS_act.F - SLS_act.F_trunc) ) )
 print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_act.Phi_matrix.value - SLS_act.Phi_trunc) ) )
 print("Error truncated polytope constraint:", np.max( np.abs(Lambda_act.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_act.Phi_trunc)) ) )
+
+
+
+
+print("--- Communication Messages ----------------------------------------------------")
+SLS_nuc.calculate_dependent_variables(key="Reweighted Nuclear Norm")
+msg_21, msg_12 = SLS_nuc.compute_communication_messages(rank_eps=1e-7)
+print("UAV2->UAV1 messages:", msg_21)
+print("UAV1->UAV2 messages:", msg_12)
+
 
 plt.show()
 
