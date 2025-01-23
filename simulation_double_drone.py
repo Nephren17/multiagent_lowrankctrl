@@ -115,7 +115,8 @@ if test_feas:
 
 key = 'Reweighted Nuclear Norm'
 start = time.time()
-# solve optimization problem
+
+
 optimize_RTH_output = optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, RTH_opt_eps)
 t1 = time.time() - start
 optimize_RTH_output.append(t1)
@@ -132,10 +133,32 @@ optimize_sparsity_sensor_output = optimize_sparsity(A_list, B_list, C_list, Poly
 t3 = time.time() - start
 optimize_sparsity_sensor_output.append(t3)
 
+
+# multi-agent communication matrix optimization
+key = 'Offdiag Communication'
+start = time.time()
+optimize_offdiag_output = optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
+t4 = time.time() - start
+optimize_offdiag_output.append(t4)
+
+# multi-agent communication matrix optimization with phi constrained
+key_diag = 'Offdiag Communication diagI'
+start = time.time()
+optimize_offdiag_diagI_output = optimize_RTH_offdiag_diagI(
+    A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,
+    N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8
+)
+t5 = time.time() - start
+optimize_offdiag_diagI_output.append(t5)
+
+
 data = {
 'Reweighted Nuclear Norm': optimize_RTH_output,
 'Reweighted Actuator Norm': optimize_sparsity_actuator_output,
-'Reweighted Sensor Norm': optimize_sparsity_sensor_output
+'Reweighted Sensor Norm': optimize_sparsity_sensor_output,
+'Offdiag Communication': optimize_offdiag_output,
+'Offdiag Communication diagI': optimize_offdiag_diagI_output
+
 }
 
 with open(file,"wb") as f:
@@ -145,6 +168,11 @@ simulation_data = pickle.load(open(file, "rb"))
 optimize_RTH_data = simulation_data['Reweighted Nuclear Norm']
 optimize_actuator_data = simulation_data['Reweighted Actuator Norm']
 optimize_sensor_data = simulation_data['Reweighted Sensor Norm']
+offdiag_data = simulation_data['Offdiag Communication']
+offdiag_diagI_data = simulation_data['Offdiag Communication diagI']
+
+
+
 
 SLS_nuc_list= optimize_RTH_data[1]
 SLS_nuc = SLS_nuc_list[-1]
@@ -163,7 +191,13 @@ Lambda_act = optimize_actuator_data[2]
 kept_act = optimize_actuator_data[4]
 SLS_act_reweighted = optimize_actuator_data[5][-1]
 
+
+# offdiag_data = [result_list, SLS_data_offdiag, Lambda_offdiag, time]
+
+
+
 print('Nuc time:', optimize_RTH_data[-1], 'Sen time:', optimize_sensor_data[-1], 'Act time:', optimize_actuator_data[-1])
+print('Offdiag time:', offdiag_data[-1])
 
 
 print("Poly_w.H shape:", Poly_w.H.shape)
@@ -284,8 +318,8 @@ for i in sign:
             w_corner[0:2] += np.array([i * radius_times[0][0], j * radius_times[0][1]])  # 无人机 1 的初始位置扰动
             w_corner[4:6] += np.array([i * radius_times[0][2], j * radius_times[0][3]])  # 无人机 2 的初始位置扰动
             
-            print("Generated w_corner length:", w_corner.shape) 
-            print("Phi_row shape:", SLS_nuc.Phi_trunc[0:(T+1)*SLS_nuc.nx, 0:(T+1)*(SLS_nuc.nx + SLS_nuc.ny)].shape)
+            # print("Generated w_corner length:", w_corner.shape) 
+            # print("Phi_row shape:", SLS_nuc.Phi_trunc[0:(T+1)*SLS_nuc.nx, 0:(T+1)*(SLS_nuc.nx + SLS_nuc.ny)].shape)
             
             # plot_trajectory(
             #     w_corner,
@@ -522,12 +556,52 @@ print("Error truncated polytope constraint:", np.max( np.abs(Lambda_act.value.do
 
 
 
-
-print("--- Communication Messages ----------------------------------------------------")
+print()
+print("--- Baseline Communication Messages ----------------------------------------------------")
 SLS_nuc.calculate_dependent_variables(key="Reweighted Nuclear Norm")
 msg_21, msg_12 = SLS_nuc.compute_communication_messages(rank_eps=1e-7)
 print("UAV2->UAV1 messages:", msg_21)
 print("UAV1->UAV2 messages:", msg_12)
+
+
+
+
+SLS_offdiag = offdiag_data[1]
+Lambda_offdiag = offdiag_data[2]
+time_offdiag = offdiag_data[-1]
+
+print()
+print("--- Offdiag Communication -----------------------------------------------------")
+print("Com time:", time_offdiag)
+Poly_xu = Poly_x.cart(Poly_u)
+diff = Lambda_offdiag.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_offdiag.Phi_trunc)
+print("Error truncated polytope constraint (Offdiag):", np.max(np.abs(diff)))
+print("rank K (offdiag):", SLS_offdiag.rank_F_trunc)
+print("band (D,E) = messages (offdiag):", SLS_offdiag.E.shape[0])
+SLS_offdiag.calculate_dependent_variables("Reweighted Nuclear Norm")  
+msg_21_offdiag, msg_12_offdiag = SLS_offdiag.compute_communication_messages(rank_eps=1e-7)
+print("UAV2->UAV1 messages (offdiag):", msg_21_offdiag)
+print("UAV1->UAV2 messages (offdiag):", msg_12_offdiag)
+rank_L1, rank_L2 = SLS_offdiag.compute_offdiag_rank_of_Phi()
+print("Supposed Rank of L1 and L2:")
+print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
+
+SLS_offdiag_diagI = offdiag_diagI_data[1]
+Lambda_diagI = offdiag_diagI_data[2]
+time_diagI = offdiag_diagI_data[-1]
+print()
+print("--- Offdiag Communication diagI ------------------------------------")
+print("Com time diagI:", time_diagI)
+SLS_offdiag_diagI.calculate_dependent_variables("Reweighted Nuclear Norm")
+SLS_offdiag_diagI.causal_factorization(rank_eps=1e-7)
+msg_21_diagI, msg_12_diagI = SLS_offdiag_diagI.compute_communication_messages(rank_eps=1e-7)
+print("UAV2->UAV1 messages diagI:", msg_21_diagI)
+print("UAV1->UAV2 messages diagI:", msg_12_diagI)
+rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
+print("Supposed Rank of L1 and L2:")
+print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
 
 
 plt.show()

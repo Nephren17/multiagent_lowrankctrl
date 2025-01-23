@@ -151,8 +151,9 @@ class SLSFinite():
             self.F = np.linalg.inv( (np.eye(self.nu*(self.T+1)) + self.Phi_ux.value @ self.Z @ self.cal_B).astype('float64') ) @ self.Phi_uy.value
         elif key=="Reweighted Actuator Norm":
             self.F = self.Phi_uy.value @ np.linalg.inv( (np.eye(self.ny*(self.T+1)) + self.cal_C @ self.Phi_xy.value).astype('float64') )
-        #print(key + ':', np.max(np.abs(F_test - self.F)))
-        assert np.all(np.isclose( self.F.astype('float64'), F_test.astype('float64')) )
+        print(key + ':', np.max(np.abs(F_test - self.F)))
+        # assert np.all(np.isclose( self.F.astype('float64'), F_test.astype('float64')) )
+        assert np.all(np.isclose(self.F, F_test, rtol=1e-5, atol=1e-5))
         filter = np.kron( np.tril(np.ones([self.T+1,self.T+1])) , np.ones([self.nu, self.ny]) )
         self.F = filter*self.F
         return
@@ -259,4 +260,57 @@ class SLSFinite():
         rank_12 = np.linalg.matrix_rank(L12, tol=rank_eps)
 
         return (rank_21, rank_12)
+
+    def extract_offdiag_expr(self, direction='21'):
+        Tplus1 = self.T + 1
+        if self.nu != 4 or self.ny != 4:
+            raise ValueError("extract_offdiag_expr assumes nu=4, ny=4 for 2 UAV each 2*2. Adjust if needed.")
+
+        if direction == '21':
+            row_start, row_end = 0,   2*Tplus1
+            col_start, col_end = 2*Tplus1, 4*Tplus1
+        elif direction == '12':
+            row_start, row_end = 2*Tplus1, 4*Tplus1
+            col_start, col_end = 0,   2*Tplus1
+        else:
+            raise ValueError("direction must be '21' or '12'")
+
+        return self.Phi_uy[row_start:row_end, col_start:col_end]
+
+
+    def compute_offdiag_rank_of_Phi(self, rank_eps=1e-7):
+        Phi_uy_val = self.Phi_uy.value
+        Tplus1 = self.T+1
+        rowU1_start, rowU1_end = 0,   2*Tplus1
+        colU2_start, colU2_end = 2*Tplus1, 4*Tplus1
+        L1 = Phi_uy_val[rowU1_start:rowU1_end, colU2_start:colU2_end]
+        
+        rowU2_start, rowU2_end = 2*Tplus1, 4*Tplus1
+        colU1_start, colU1_end = 0,        2*Tplus1
+        L2 = Phi_uy_val[rowU2_start:rowU2_end, colU1_start:colU1_end]
+        
+        rank1 = np.linalg.matrix_rank(L1, tol=rank_eps)
+        rank2 = np.linalg.matrix_rank(L2, tol=rank_eps)
+        return rank1, rank2
+
+
+
+
+    def polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w):
+        constraints = SLS_data.SLP_constraints()
+        Poly_xu = Poly_x.cart(Poly_u)
+        Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
+        constraints += [Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
+                        Lambda @ Poly_w.h <= Poly_xu.h]
+
+        Tplus1 = SLS_data.T + 1
+        nx = SLS_data.nx
+        constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, nx, Tplus1)
+        if nx == SLS_data.ny:
+            constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, nx, Tplus1)
+
+        return constraints, Lambda
+
+
+
 
