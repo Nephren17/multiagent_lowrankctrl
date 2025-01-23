@@ -473,6 +473,77 @@ def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
 
     return constraints, Lambda
 
+
+def no_comm_all(SLS_data):
+    """
+    Set all \Phi_{xx}, \Phi_{xy}, \Phi_{ux}, \Phi_{uy} offdiag to zero
+    """
+    constraints = []
+    Tplus1 = SLS_data.T + 1
+    x1r_start, x1r_end = 0, 4*Tplus1
+    x2r_start, x2r_end = 4*Tplus1, 8*Tplus1
+    x1c_start, x1c_end = 0, 4*Tplus1
+    x2c_start, x2c_end = 4*Tplus1, 8*Tplus1
+
+
+    for i in range(x1r_start, x1r_end):
+        for j in range(x2c_start, x2c_end):
+            constraints.append(SLS_data.Phi_xx[i, j] == 0)
+
+    for i in range(x2r_start, x2r_end):
+        for j in range(x1c_start, x1c_end):
+            constraints.append(SLS_data.Phi_xx[i, j] == 0)
+
+    y1c_start, y1c_end = 0, 2*Tplus1
+    y2c_start, y2c_end = 2*Tplus1, 4*Tplus1
+
+    for i in range(x1r_start, x1r_end):
+        for j in range(y2c_start, y2c_end):
+            constraints.append(SLS_data.Phi_xy[i, j] == 0)
+
+    for i in range(x2r_start, x2r_end):
+        for j in range(y1c_start, y1c_end):
+            constraints.append(SLS_data.Phi_xy[i, j] == 0)
+
+    u1r_start, u1r_end = 0, 2*Tplus1
+    u2r_start, u2r_end = 2*Tplus1, 4*Tplus1
+
+    for i in range(u2r_start, u2r_end):
+        for j in range(x1c_start, x1c_end):
+            constraints.append(SLS_data.Phi_ux[i, j] == 0)
+
+    for i in range(u1r_start, u1r_end):
+        for j in range(x2c_start, x2c_end):
+            constraints.append(SLS_data.Phi_ux[i, j] == 0)
+
+    for i in range(u2r_start, u2r_end):
+        for j in range(y1c_start, y1c_end):
+            constraints.append(SLS_data.Phi_uy[i, j] == 0)  # y1->u2
+    for i in range(u1r_start, u1r_end):
+        for j in range(y2c_start, y2c_end):
+            constraints.append(SLS_data.Phi_uy[i, j] == 0)  # y2->u1
+
+    return constraints
+
+def polytope_constraints_no_comm_all(SLS_data, Poly_x, Poly_u, Poly_w):
+    constraints = SLS_data.SLP_constraints()
+    Poly_xu = Poly_x.cart(Poly_u)
+    Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
+    constraints += [
+        Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
+        Lambda @ Poly_w.h <= Poly_xu.h
+    ]
+
+    constraints += no_comm_all(SLS_data)
+
+    return constraints, Lambda
+
+
+
+
+
+
+
 def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps):
     """
     No cross-communication between UAVs,
@@ -480,7 +551,7 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
     """
     SLS_data = SLSFinite(A_list, B_list, C_list)
 
-    [constraints, Lambda] = polytope_constraints_no_comm_both_ways(
+    [constraints, Lambda] = polytope_constraints_no_comm_all(
         SLS_data, Poly_x, Poly_u, Poly_w
     )
 
@@ -497,3 +568,8 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
         raise Exception("Solver did not converge or feasible solution not found.")
 
     return [result, SLS_data, Lambda]
+
+
+
+
+

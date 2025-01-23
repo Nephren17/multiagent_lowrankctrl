@@ -40,7 +40,7 @@ max_x0 = 1
 max_v0 = 0
 box_x = 10
 
-comm_dist = 20
+comm_dist = 100
 
 center_times_uav1 = (T + 1) * [[0, 0, 0, 0]]
 center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
@@ -267,15 +267,8 @@ for idx in box_check:
 
     # drone 2
     rect_uav2 = patches.Rectangle(
-        (center_times[idx][4] - radius_times[idx][4],
-         center_times[idx][5] - radius_times[idx][5]),
-        2 * radius_times[idx][4],
-        2 * radius_times[idx][5],
-        linewidth=1,
-        edgecolor='k',
-        facecolor=colors[counter],  
-        label=f'$\\mathcal{{X}}_{{2,{idx}}}$'
-    )
+        (center_times[idx][4] - radius_times[idx][4], center_times[idx][5] - radius_times[idx][5]),
+        2 * radius_times[idx][4], 2 * radius_times[idx][5], linewidth=1, edgecolor='k', facecolor=colors[counter],  label=f'$\\mathcal{{X}}_{{2,{idx}}}$')
     ax1.add_patch(rect_uav2)
 
     counter += 1
