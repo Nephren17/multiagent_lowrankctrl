@@ -219,37 +219,24 @@ class SLSFinite():
         self.causal_time = time.time() - start
         return
 
+
+
     def extract_sub_communication_matrix(self, direction='21'):
-        if self.F is None:
-            raise ValueError("self.F is not computed yet. Please run calculate_dependent_variables() first.")
-
-        block_size_out = 2
-        block_size_in  = 2
-
-        if direction == '21':
-            row_slice = slice(0, 2)
-            col_slice = slice(2, 4)
-        elif direction == '12':
-            row_slice = slice(2, 4)
-            col_slice = slice(0, 2)
-        else:
-            raise ValueError("direction must be '21' or '12'")
-
         Tplus1 = self.T + 1
-        big_mat = np.zeros((block_size_out * Tplus1, block_size_in * Tplus1))
+        
+        if direction == '21':
+            row_slice = slice(2*Tplus1, 4*Tplus1)
+            col_slice = slice(0, 2*Tplus1)
+        else:
+            row_slice = slice(0, 2*Tplus1)
+            col_slice = slice(2*Tplus1, 4*Tplus1)
 
-        for t in range(Tplus1):
-            for tau in range(t+1):
-                F_block = self.F[t*self.nu : (t+1)*self.nu,
-                                tau*self.ny: (tau+1)*self.ny]
-                sub_2x2 = F_block[row_slice, col_slice]
+        submat = self.F[row_slice, col_slice]
+        return submat
 
-                row_offset = t * block_size_out
-                col_offset = tau * block_size_in
-                big_mat[row_offset : row_offset+block_size_out,
-                        col_offset : col_offset+block_size_in] = sub_2x2
 
-        return big_mat
+
+
 
 
     def compute_communication_messages(self, rank_eps=1e-7):
@@ -312,5 +299,30 @@ class SLSFinite():
         return constraints, Lambda
 
 
+    def no_communication_block_u1_to_u2(Phi_uy, Tplus1):
+        """
+        Enforce the sub-block mapping from y1 to u2 is all zeros.
+        """
+        constraints = []
+        row_start = 2*Tplus1
+        row_end   = 4*Tplus1
+        col_start = 0
+        col_end   = 2*Tplus1
+        for i in range(row_start, row_end):
+            for j in range(col_start, col_end):
+                constraints.append(Phi_uy[i,j] == 0)
+        return constraints
+
+
+    def no_communication_block_u2_to_u1(Phi_uy, Tplus1):
+        constraints = []
+        row_start = 0
+        row_end   = 2*Tplus1
+        col_start = 2*Tplus1
+        col_end   = 4*Tplus1
+        for i in range(row_start, row_end):
+            for j in range(col_start, col_end):
+                constraints.append(Phi_uy[i,j] == 0)
+        return constraints
 
 

@@ -40,7 +40,7 @@ max_x0 = 1
 max_v0 = 0
 box_x = 10
 
-comm_dist = 12
+comm_dist = 20
 
 center_times_uav1 = (T + 1) * [[0, 0, 0, 0]]
 center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
@@ -115,8 +115,6 @@ if test_feas:
 
 key = 'Reweighted Nuclear Norm'
 start = time.time()
-
-
 optimize_RTH_output = optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, RTH_opt_eps)
 t1 = time.time() - start
 optimize_RTH_output.append(t1)
@@ -134,6 +132,8 @@ t3 = time.time() - start
 optimize_sparsity_sensor_output.append(t3)
 
 
+
+
 # multi-agent communication matrix optimization
 key = 'Offdiag Communication'
 start = time.time()
@@ -144,21 +144,24 @@ optimize_offdiag_output.append(t4)
 # multi-agent communication matrix optimization with phi constrained
 key_diag = 'Offdiag Communication diagI'
 start = time.time()
-optimize_offdiag_diagI_output = optimize_RTH_offdiag_diagI(
-    A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,
-    N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8
-)
+optimize_offdiag_diagI_output = optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
 t5 = time.time() - start
 optimize_offdiag_diagI_output.append(t5)
 
+# multi-agent without any communication
+key_diag = 'No Communication'
+start = time.time()
+optimize_no_comm_output = optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,opt_eps=1e-11)
+t6 = time.time() - start
+optimize_no_comm_output.append(t6)
 
 data = {
 'Reweighted Nuclear Norm': optimize_RTH_output,
 'Reweighted Actuator Norm': optimize_sparsity_actuator_output,
 'Reweighted Sensor Norm': optimize_sparsity_sensor_output,
 'Offdiag Communication': optimize_offdiag_output,
-'Offdiag Communication diagI': optimize_offdiag_diagI_output
-
+'Offdiag Communication diagI': optimize_offdiag_diagI_output,
+'No Communication': optimize_no_comm_output
 }
 
 with open(file,"wb") as f:
@@ -170,7 +173,7 @@ optimize_actuator_data = simulation_data['Reweighted Actuator Norm']
 optimize_sensor_data = simulation_data['Reweighted Sensor Norm']
 offdiag_data = simulation_data['Offdiag Communication']
 offdiag_diagI_data = simulation_data['Offdiag Communication diagI']
-
+no_comm_data = simulation_data['No Communication']
 
 
 
@@ -602,6 +605,21 @@ rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
 print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
 
+
+SLS_no_comm = no_comm_data[1]
+time_no_comm = no_comm_data[-1]
+print()
+print("--- No Communication ------------------------------------")
+print("Com time no comm:", time_no_comm)
+SLS_no_comm.calculate_dependent_variables("Reweighted Nuclear Norm")  
+SLS_no_comm.causal_factorization(rank_eps=1e-7)
+print("Rank F no-comm:", SLS_no_comm.rank_F_trunc)
+msg_21_nocomm, msg_12_nocomm = SLS_no_comm.compute_communication_messages()
+print("UAV2->UAV1 messages (no-comm):", msg_21_nocomm)
+print("UAV1->UAV2 messages (no-comm):", msg_12_nocomm)
+rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
+print("Supposed Rank of L1 and L2:")
+print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
 
 
 plt.show()

@@ -427,3 +427,73 @@ def diagonal_identity_block_constraints_xy(Phi_xy, nx, ny, Tplus1):
                     constraints.append(Phi_xy[row_block+i, col_block+j] == 0.0)
     return constraints
 
+def no_communication_block_u1_to_u2(Phi_uy, Tplus1):
+    """
+    Enforce the sub-block mapping from y1 to u2 is all zeros.
+    """
+    constraints = []
+    row_start = 2*Tplus1
+    row_end   = 4*Tplus1
+    col_start = 0
+    col_end   = 2*Tplus1
+    for i in range(row_start, row_end):
+        for j in range(col_start, col_end):
+            constraints.append(Phi_uy[i,j] == 0)
+    return constraints
+
+
+def no_communication_block_u2_to_u1(Phi_uy, Tplus1):
+    constraints = []
+    row_start = 0
+    row_end   = 2*Tplus1
+    col_start = 2*Tplus1
+    col_end   = 4*Tplus1
+    for i in range(row_start, row_end):
+        for j in range(col_start, col_end):
+            constraints.append(Phi_uy[i,j] == 0)
+    return constraints
+
+
+def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
+    """
+    Add polyconstraint: no comm between two drones
+    """
+    constraints = SLS_data.SLP_constraints()
+
+    Poly_xu = Poly_x.cart(Poly_u)
+    Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
+    constraints += [
+        Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
+        Lambda @ Poly_w.h <= Poly_xu.h
+    ]
+
+    Tplus1 = SLS_data.T + 1
+    constraints += no_communication_block_u1_to_u2(SLS_data.Phi_uy, Tplus1)
+    constraints += no_communication_block_u2_to_u1(SLS_data.Phi_uy, Tplus1)
+
+    return constraints, Lambda
+
+def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps):
+    """
+    No cross-communication between UAVs,
+    objective = 0 for demonstration.
+    """
+    SLS_data = SLSFinite(A_list, B_list, C_list)
+
+    [constraints, Lambda] = polytope_constraints_no_comm_both_ways(
+        SLS_data, Poly_x, Poly_u, Poly_w
+    )
+
+    # just feasibility check
+    objective = cp.Minimize(0)
+    problem = cp.Problem(objective, constraints)
+
+    result = problem.solve(
+        solver=cp.MOSEK,
+        mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS': opt_eps},
+        verbose=True
+    )
+    if problem.status != cp.OPTIMAL:
+        raise Exception("Solver did not converge or feasible solution not found.")
+
+    return [result, SLS_data, Lambda]
