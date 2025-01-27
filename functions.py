@@ -2,6 +2,7 @@ import numpy as np
 import cvxpy as cp
 from SLSFinite import *
 from Polytope import *
+import matplotlib
 import matplotlib.pyplot as plt
 import copy
 
@@ -326,9 +327,11 @@ def polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w):
 
     Tplus1 = SLS_data.T + 1
     nx = SLS_data.nx
+    nu = SLS_data.nu
+    ny = SLS_data.ny
     constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, nx, Tplus1)
-    if nx == SLS_data.ny:
-        constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, nx, Tplus1)
+    constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, ny, Tplus1)
+    constraints += diagonal_identity_block_constraints_ux(SLS_data.Phi_ux, nx, nu, Tplus1)
 
     return constraints, Lambda
 
@@ -396,62 +399,81 @@ def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
     print("Error truncated polytope constraint:", max_err)
     return [result_list, SLS_data, Lambda]
 
+
 def diagonal_identity_block_constraints_xx(Phi_xx, nx, Tplus1):
     constraints = []
+    half_nx = nx // 2
     for t in range(Tplus1):
-        row_block = t*nx
-        col_block = t*nx
-        for i in range(nx):
-            for j in range(nx):
-                if i == j:
-                    constraints.append(Phi_xx[row_block+i, col_block+j] == 1.0)
-                else:
-                    constraints.append(Phi_xx[row_block+i, col_block+j] == 0.0)
+        for tau in range(Tplus1):
+            row_block = t * nx
+            col_block = tau * nx
+            for i in range(0, half_nx):
+                for j in range(half_nx, nx):
+                    constraints.append(Phi_xx[row_block + i, col_block + j] == 0.0)
+            for i in range(half_nx, nx):
+                for j in range(0, half_nx):
+                    constraints.append(Phi_xx[row_block + i, col_block + j] == 0.0)
     return constraints
+
+
+
+def diagonal_identity_block_constraints_ux(Phi_ux, nx, nu, Tplus1):
+    constraints = []
+    half_nu = nu // 2
+    half_nx = nx // 2
+
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            row_block = t * nu
+            col_block = tau * nx
+            for i in range(0, half_nu):
+                for j in range(half_nx, nx):
+                    constraints.append(Phi_ux[row_block + i, col_block + j] == 0.0)
+            for i in range(half_nu, nu):
+                for j in range(0, half_nx):
+                    constraints.append(Phi_ux[row_block + i, col_block + j] == 0.0)
+    return constraints
+
 
 def diagonal_identity_block_constraints_xy(Phi_xy, nx, ny, Tplus1):
-    """
-    check shape nx ?= ny
-    """
-    if nx != ny:
-        raise ValueError("Cannot enforce identity block for Phi_xy if nx!=ny.")
     constraints = []
+    half_nx = nx // 2
+    half_ny = ny // 2
+
     for t in range(Tplus1):
-        row_block = t*nx
-        col_block = t*ny
-        for i in range(nx):
-            for j in range(nx):
-                if i == j:
-                    constraints.append(Phi_xy[row_block+i, col_block+j] == 1.0)
-                else:
-                    constraints.append(Phi_xy[row_block+i, col_block+j] == 0.0)
+        for tau in range(Tplus1):
+            row_block = t * nx
+            col_block = tau * ny
+            for i in range(0, half_nx):
+                for j in range(half_ny, ny):
+                    constraints.append(
+                        Phi_xy[row_block + i, col_block + j] == 0.0
+                    )
+            for i in range(half_nx, nx):
+                for j in range(0, half_ny):
+                    constraints.append(
+                        Phi_xy[row_block + i, col_block + j] == 0.0
+                    )
     return constraints
 
-def no_communication_block_u1_to_u2(Phi_uy, Tplus1):
-    """
-    Enforce the sub-block mapping from y1 to u2 is all zeros.
-    """
+
+def diagonal_identity_block_constraints_uy(Phi_uy, nu, ny, Tplus1):
     constraints = []
-    row_start = 2*Tplus1
-    row_end   = 4*Tplus1
-    col_start = 0
-    col_end   = 2*Tplus1
-    for i in range(row_start, row_end):
-        for j in range(col_start, col_end):
-            constraints.append(Phi_uy[i,j] == 0)
+    half_nu = nu // 2
+    half_ny = ny // 2
+
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            row_block = t * nu
+            col_block = tau * ny
+            for i in range(0, half_nu):
+                for j in range(half_ny, ny):
+                    constraints.append(Phi_uy[row_block + i, col_block + j] == 0.0)
+            for i in range(half_nu, nu):
+                for j in range(0, half_nu):
+                    constraints.append(Phi_uy[row_block + i, col_block + j] == 0.0)
     return constraints
 
-
-def no_communication_block_u2_to_u1(Phi_uy, Tplus1):
-    constraints = []
-    row_start = 0
-    row_end   = 2*Tplus1
-    col_start = 2*Tplus1
-    col_end   = 4*Tplus1
-    for i in range(row_start, row_end):
-        for j in range(col_start, col_end):
-            constraints.append(Phi_uy[i,j] == 0)
-    return constraints
 
 
 def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
@@ -468,79 +490,15 @@ def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
     ]
 
     Tplus1 = SLS_data.T + 1
-    constraints += no_communication_block_u1_to_u2(SLS_data.Phi_uy, Tplus1)
-    constraints += no_communication_block_u2_to_u1(SLS_data.Phi_uy, Tplus1)
+    nx = SLS_data.nx
+    nu = SLS_data.nu
+    ny = SLS_data.ny
+    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, nx, Tplus1)
+    constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, ny, Tplus1)
+    constraints += diagonal_identity_block_constraints_ux(SLS_data.Phi_ux, nx, nu, Tplus1)
+    constraints += diagonal_identity_block_constraints_uy(SLS_data.Phi_uy, nu, ny, Tplus1)
 
     return constraints, Lambda
-
-
-def no_comm_all(SLS_data):
-    """
-    Set all \Phi_{xx}, \Phi_{xy}, \Phi_{ux}, \Phi_{uy} offdiag to zero
-    """
-    constraints = []
-    Tplus1 = SLS_data.T + 1
-    x1r_start, x1r_end = 0, 4*Tplus1
-    x2r_start, x2r_end = 4*Tplus1, 8*Tplus1
-    x1c_start, x1c_end = 0, 4*Tplus1
-    x2c_start, x2c_end = 4*Tplus1, 8*Tplus1
-
-
-    for i in range(x1r_start, x1r_end):
-        for j in range(x2c_start, x2c_end):
-            constraints.append(SLS_data.Phi_xx[i, j] == 0)
-
-    for i in range(x2r_start, x2r_end):
-        for j in range(x1c_start, x1c_end):
-            constraints.append(SLS_data.Phi_xx[i, j] == 0)
-
-    y1c_start, y1c_end = 0, 2*Tplus1
-    y2c_start, y2c_end = 2*Tplus1, 4*Tplus1
-
-    for i in range(x1r_start, x1r_end):
-        for j in range(y2c_start, y2c_end):
-            constraints.append(SLS_data.Phi_xy[i, j] == 0)
-
-    for i in range(x2r_start, x2r_end):
-        for j in range(y1c_start, y1c_end):
-            constraints.append(SLS_data.Phi_xy[i, j] == 0)
-
-    u1r_start, u1r_end = 0, 2*Tplus1
-    u2r_start, u2r_end = 2*Tplus1, 4*Tplus1
-
-    for i in range(u2r_start, u2r_end):
-        for j in range(x1c_start, x1c_end):
-            constraints.append(SLS_data.Phi_ux[i, j] == 0)
-
-    for i in range(u1r_start, u1r_end):
-        for j in range(x2c_start, x2c_end):
-            constraints.append(SLS_data.Phi_ux[i, j] == 0)
-
-    for i in range(u2r_start, u2r_end):
-        for j in range(y1c_start, y1c_end):
-            constraints.append(SLS_data.Phi_uy[i, j] == 0)  # y1->u2
-    for i in range(u1r_start, u1r_end):
-        for j in range(y2c_start, y2c_end):
-            constraints.append(SLS_data.Phi_uy[i, j] == 0)  # y2->u1
-
-    return constraints
-
-def polytope_constraints_no_comm_all(SLS_data, Poly_x, Poly_u, Poly_w):
-    constraints = SLS_data.SLP_constraints()
-    Poly_xu = Poly_x.cart(Poly_u)
-    Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
-    constraints += [
-        Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
-        Lambda @ Poly_w.h <= Poly_xu.h
-    ]
-
-    constraints += no_comm_all(SLS_data)
-
-    return constraints, Lambda
-
-
-
-
 
 
 
@@ -551,11 +509,10 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
     """
     SLS_data = SLSFinite(A_list, B_list, C_list)
 
-    [constraints, Lambda] = polytope_constraints_no_comm_all(
+    [constraints, Lambda] = polytope_constraints_no_comm_both_ways(
         SLS_data, Poly_x, Poly_u, Poly_w
     )
 
-    # just feasibility check
     objective = cp.Minimize(0)
     problem = cp.Problem(objective, constraints)
 
@@ -572,4 +529,125 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
 
 
 
+# Optimize without constraint on phi_ux
+'''
+The constraint on phi_ux is removed. Optimize Off-diag of phi_uy - phi_ux
+'''
+def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+    SLS_data = SLSFinite(A_list, B_list, C_list)
+    [constraints, Lambda] = polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w)
 
+    L1_expr = SLS_data.extract_offdiag_expr(direction='21')
+    L2_expr = SLS_data.extract_offdiag_expr(direction='12')
+    dim = 2*(SLS_data.T+1)
+    W1_left = cp.Parameter((dim, dim), PSD=True)
+    W1_right= cp.Parameter((dim, dim), PSD=True)
+    W2_left = cp.Parameter((dim, dim), PSD=True)
+    W2_right= cp.Parameter((dim, dim), PSD=True)
+
+    W1_left.value  = delta**(-0.5) * np.eye(dim)
+    W1_right.value = delta**(-0.5) * np.eye(dim)
+    W2_left.value  = delta**(-0.5) * np.eye(dim)
+    W2_right.value = delta**(-0.5) * np.eye(dim)
+
+    # revised object function
+    objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+    problem = cp.Problem(objective, constraints)
+
+    result_list = []
+    SLS_data_list = []
+
+    def update_reweight(L_val, Wleft_val, Wright_val):
+        left_inv  = np.linalg.inv(Wleft_val)
+        right_inv = np.linalg.inv(Wright_val)
+        Y = left_inv @ L_val @ right_inv
+        Y_reg = Y + delta*np.eye(Y.shape[0])
+        eigvals, eigvecs = np.linalg.eigh(Y_reg)
+        assert np.all(eigvals>0), "reweighting: negative eigenvalue found!"
+        W_new = eigvecs @ np.diag(eigvals**(-0.5)) @ eigvecs.T
+        return W_new, W_new
+
+    for k in range(N):
+        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
+        if problem.status != cp.OPTIMAL:
+            raise Exception("Solver did not converge!")
+        
+        result_list.append(result)
+        SLS_data_list.append(copy.deepcopy(SLS_data))
+
+        L1_val = L1_expr.value
+        L2_val = L2_expr.value
+        W1_left.value, W1_right.value = update_reweight(L1_val, W1_left.value, W1_right.value)
+        W2_left.value, W2_right.value = update_reweight(L2_val, W2_left.value, W2_right.value)
+
+
+    SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
+    # causal_factorization
+    SLS_data.causal_factorization(rank_eps)
+    SLS_data.F_trunc_to_Phi_trunc()
+
+    Poly_xu = Poly_x.cart(Poly_u)
+    # example check => truncated constraint
+    diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
+    max_err = np.max( np.abs(diff) )
+    print("Error truncated polytope constraint:", max_err)
+    return [result_list, SLS_data, Lambda]
+
+
+
+def plot_matrices_sparcity(SLS_data, save_path=None):
+
+    phi_xx_val = SLS_data.Phi_xx.value
+    phi_xy_val = SLS_data.Phi_xy.value
+    phi_ux_val = SLS_data.Phi_ux.value
+    phi_uy_val = SLS_data.Phi_uy.value
+    F_val      = SLS_data.F 
+
+    if phi_xx_val is None or phi_xy_val is None or phi_ux_val is None or phi_uy_val is None:
+        raise ValueError("Some of Phi_xx, Phi_xy, Phi_ux, Phi_uy is None. The solver might not have run or not be optimal.")
+    if F_val is None:
+        raise ValueError("SLS_data.F is None. You must run calculate_dependent_variables(...) first.")
+
+
+    fig, axes = plt.subplots(2, 3, figsize=(14,8))
+
+    prec = 1e-14
+    mk_size = 1.0
+
+    ax_xx = axes[0,0]
+    ax_xy = axes[0,1]
+    ax_ux = axes[0,2]
+
+    ax_uy = axes[1,0]
+    ax_F  = axes[1,1]
+
+    # Phi_xx
+    ax_xx.spy(phi_xx_val, precision=prec, markersize=mk_size, aspect='auto')
+    ax_xx.set_title("Phi_xx")
+
+    # Phi_xy
+    ax_xy.spy(phi_xy_val, precision=prec, markersize=mk_size, aspect='auto')
+    ax_xy.set_title("Phi_xy")
+
+    # Phi_ux
+    ax_ux.spy(phi_ux_val, precision=prec, markersize=mk_size, aspect='auto')
+    ax_ux.set_title("Phi_ux")
+
+    # Phi_uy
+    ax_uy.spy(phi_uy_val, precision=prec, markersize=mk_size, aspect='auto')
+    ax_uy.set_title("Phi_uy")
+
+    # F
+    ax_F.spy(F_val, precision=prec, markersize=mk_size, aspect='auto')
+    ax_F.set_title("F (closed-loop)")
+
+    axes[1,2].axis("off")
+    axes[1,2].set_title("")
+
+    fig.suptitle("Phi and F Matrices Visualization", fontsize=14)
+    fig.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path, bbox_inches="tight")
+
+    plt.show()

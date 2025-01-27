@@ -38,9 +38,9 @@ C_list = (T + 1) * [C_joint]
 max_v = 2
 max_x0 = 1
 max_v0 = 0
-box_x = 10
+box_x = 7
 
-comm_dist = 100
+comm_dist = 12
 
 center_times_uav1 = (T + 1) * [[0, 0, 0, 0]]
 center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
@@ -161,8 +161,20 @@ data = {
 'Reweighted Sensor Norm': optimize_sparsity_sensor_output,
 'Offdiag Communication': optimize_offdiag_output,
 'Offdiag Communication diagI': optimize_offdiag_diagI_output,
-'No Communication': optimize_no_comm_output
+'No Communication': None
 }
+
+key_diag = 'No Communication'
+if comm_dist >= 18:
+    start = time.time()
+    optimize_no_comm_output = optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,opt_eps=1e-11)
+    t6 = time.time() - start
+    optimize_no_comm_output.append(t6)
+    data['No Communication'] = optimize_no_comm_output
+else:
+    data['No Communication'] = None
+
+
 
 with open(file,"wb") as f:
     pickle.dump(data, f)
@@ -216,17 +228,6 @@ print("SLS_nuc.ny (measurement noise dimension):", SLS_nuc.ny)
 ### MAKE PLOTS ############################################################################################
 textsize=10
 # Trajectory plots
-# def plot_trajectory(w, Phi_row, n_dim, checkpoints, ax):
-#     traj = Phi_row @ w
-#     traj = traj.reshape((-1, n_dim))
-#     #assert traj.shape == (21,n_dim)
-#     #print(x_traj)
-#     color = next(ax._get_lines.prop_cycler)['color']
-#     ax.plot(traj[:,0], traj[:,1], color = color, linewidth=0.5)
-#     for i in checkpoints:
-#         ax.plot(traj[i,0], traj[i,1], '.', color = color)
-#     return
-
 def plot_trajectory(w, Phi_row, n_dim, checkpoints, ax, uav_index=1):
     traj = Phi_row @ w
     traj = traj.reshape((-1, n_dim))
@@ -278,20 +279,7 @@ sign = [1, -1]
 
 
 
-N_corner = 10
-# for i in sign:
-#     for j in sign:
-#         for k in range(N_corner):
-#             w_corner = np.array([])
-#             for _ in range(T+1):
-#                 w_corner = np.hstack([w_corner, wx_scale*np.random.choice([-1, 1], SLS_nuc.nx//2), wxdot_scale*np.random.choice([-1, 1], SLS_nuc.nx//2)])
-#             w_corner = np.hstack([w_corner, v_scale*np.random.choice([-1, 1], (T+1)*(SLS_nuc.ny))])
-#             w_corner[0:SLS_nuc.nx] = center_times[0]
-#             w_corner[0:2] += np.array([i*radius_times[0][0],j*radius_times[0][1]])
-#             plot_trajectory(w_corner, SLS_nuc.Phi_trunc[0:(T+1)*SLS_nuc.nx, 0:(T+1)*(SLS_nuc.nx + SLS_nuc.ny)], SLS_nuc.nx, box_check, ax1)
-
-
-
+N_corner = 2
 for i in sign:
     for j in sign:
         for k in range(N_corner):
@@ -574,7 +562,8 @@ diff = Lambda_offdiag.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_offdiag.Phi_trunc)
 print("Error truncated polytope constraint (Offdiag):", np.max(np.abs(diff)))
 print("rank K (offdiag):", SLS_offdiag.rank_F_trunc)
 print("band (D,E) = messages (offdiag):", SLS_offdiag.E.shape[0])
-SLS_offdiag.calculate_dependent_variables("Reweighted Nuclear Norm")  
+SLS_offdiag.calculate_dependent_variables("Reweighted Nuclear Norm")
+plot_matrices_sparcity(SLS_offdiag)
 msg_21_offdiag, msg_12_offdiag = SLS_offdiag.compute_communication_messages(rank_eps=1e-7)
 print("UAV2->UAV1 messages (offdiag):", msg_21_offdiag)
 print("UAV1->UAV2 messages (offdiag):", msg_12_offdiag)
@@ -590,6 +579,7 @@ print()
 print("--- Offdiag Communication diagI ------------------------------------")
 print("Com time diagI:", time_diagI)
 SLS_offdiag_diagI.calculate_dependent_variables("Reweighted Nuclear Norm")
+plot_matrices_sparcity(SLS_offdiag_diagI)
 SLS_offdiag_diagI.causal_factorization(rank_eps=1e-7)
 msg_21_diagI, msg_12_diagI = SLS_offdiag_diagI.compute_communication_messages(rank_eps=1e-7)
 print("UAV2->UAV1 messages diagI:", msg_21_diagI)
@@ -599,20 +589,24 @@ print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
 
 
-SLS_no_comm = no_comm_data[1]
-time_no_comm = no_comm_data[-1]
-print()
-print("--- No Communication ------------------------------------")
-print("Com time no comm:", time_no_comm)
-SLS_no_comm.calculate_dependent_variables("Reweighted Nuclear Norm")  
-SLS_no_comm.causal_factorization(rank_eps=1e-7)
-print("Rank F no-comm:", SLS_no_comm.rank_F_trunc)
-msg_21_nocomm, msg_12_nocomm = SLS_no_comm.compute_communication_messages()
-print("UAV2->UAV1 messages (no-comm):", msg_21_nocomm)
-print("UAV1->UAV2 messages (no-comm):", msg_12_nocomm)
-rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
-print("Supposed Rank of L1 and L2:")
-print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
+
+no_comm_data = simulation_data['No Communication']
+if no_comm_data is not None:
+    SLS_no_comm = no_comm_data[1]
+    time_no_comm = no_comm_data[-1]
+    print()
+    print("--- No Communication ------------------------------------")
+    print("Com time no comm:", time_no_comm)
+    SLS_no_comm.calculate_dependent_variables("Reweighted Nuclear Norm")
+    SLS_no_comm.causal_factorization(rank_eps=1e-7)
+    print("Rank F no-comm:", SLS_no_comm.rank_F_trunc)
+    msg_21_nocomm, msg_12_nocomm = SLS_no_comm.compute_communication_messages()
+    print("UAV2->UAV1 messages (no-comm):", msg_21_nocomm)
+    print("UAV1->UAV2 messages (no-comm):", msg_12_nocomm)
+    rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
+    print("Supposed Rank of L1 and L2:")
+    print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
 
 
 plt.show()

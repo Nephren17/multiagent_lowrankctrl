@@ -221,23 +221,28 @@ class SLSFinite():
 
 
 
+
     def extract_sub_communication_matrix(self, direction='21'):
         Tplus1 = self.T + 1
-        
-        if direction == '21':
-            row_slice = slice(2*Tplus1, 4*Tplus1)
-            col_slice = slice(0, 2*Tplus1)
-        else:
-            row_slice = slice(0, 2*Tplus1)
-            col_slice = slice(2*Tplus1, 4*Tplus1)
+        block_row = 4
+        block_col = 4
 
-        submat = self.F[row_slice, col_slice]
-        return submat
+        big_mat = np.zeros((2*Tplus1, 2*Tplus1))
 
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_4x4 = self.F[row_start : row_start+block_row,
+                                col_start : col_start+block_col]
+                
+                if direction == '21':
+                    sub_2x2 = sub_4x4[0:2, 2:4]
+                else:
+                    sub_2x2 = sub_4x4[2:4, 0:2]
 
-
-
-
+                big_mat[t*2 : (t+1)*2,  tau*2 : (tau+1)*2] = sub_2x2
+        return big_mat
 
     def compute_communication_messages(self, rank_eps=1e-7):
         L21 = self.extract_sub_communication_matrix(direction='21')
@@ -248,81 +253,57 @@ class SLSFinite():
 
         return (rank_21, rank_12)
 
+
+
+
     def extract_offdiag_expr(self, direction='21'):
         Tplus1 = self.T + 1
-        if self.nu != 4 or self.ny != 4:
-            raise ValueError("extract_offdiag_expr assumes nu=4, ny=4 for 2 UAV each 2*2. Adjust if needed.")
+        block_row = 4
+        block_col = 4
 
-        if direction == '21':
-            row_start, row_end = 0,   2*Tplus1
-            col_start, col_end = 2*Tplus1, 4*Tplus1
-        elif direction == '12':
-            row_start, row_end = 2*Tplus1, 4*Tplus1
-            col_start, col_end = 0,   2*Tplus1
-        else:
-            raise ValueError("direction must be '21' or '12'")
+        if self.Phi_uy.shape != (4*Tplus1, 4*Tplus1):
+            raise ValueError(f"Phi_uy has shape {self.Phi_uy.shape}, but expected {(4*Tplus1, 4*Tplus1)}.")
 
-        return self.Phi_uy[row_start:row_end, col_start:col_end]
+        sub_blocks = []
+        for t in range(Tplus1):
+            row_list = []
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_4x4 = self.Phi_uy[row_start : row_start+block_row,
+                                    col_start : col_start+block_col]
+                if direction == '21':
+                    sub_2x2 = sub_4x4[0:2, 2:4]
+                else:
+                    sub_2x2 = sub_4x4[2:4, 0:2]
+
+                row_list.append(sub_2x2)
+            sub_blocks.append(row_list)
+        big_expr = cp.bmat(sub_blocks)  
+        return big_expr
 
 
     def compute_offdiag_rank_of_Phi(self, rank_eps=1e-7):
-        Phi_uy_val = self.Phi_uy.value
-        Tplus1 = self.T+1
-        rowU1_start, rowU1_end = 0,   2*Tplus1
-        colU2_start, colU2_end = 2*Tplus1, 4*Tplus1
-        L1 = Phi_uy_val[rowU1_start:rowU1_end, colU2_start:colU2_end]
-        
-        rowU2_start, rowU2_end = 2*Tplus1, 4*Tplus1
-        colU1_start, colU1_end = 0,        2*Tplus1
-        L2 = Phi_uy_val[rowU2_start:rowU2_end, colU1_start:colU1_end]
-        
-        rank1 = np.linalg.matrix_rank(L1, tol=rank_eps)
-        rank2 = np.linalg.matrix_rank(L2, tol=rank_eps)
+        L1_mat = self.extract_offdiag_expr(direction='21')
+        if hasattr(L1_mat, 'value'):
+            L1_val = L1_mat.value
+            if L1_val is None:
+                raise ValueError("extract_offdiag_expr('21') => Expression has no .value? Check if solver ran.")
+        else:
+            L1_val = L1_mat
+        rank1 = np.linalg.matrix_rank(L1_val, tol=rank_eps)
+
+        L2_mat = self.extract_offdiag_expr(direction='12')
+        if hasattr(L2_mat, 'value'):
+            L2_val = L2_mat.value
+            if L2_val is None:
+                raise ValueError("extract_offdiag_expr('12') => Expression has no .value? Check if solver ran.")
+        else:
+            L2_val = L2_mat
+        rank2 = np.linalg.matrix_rank(L2_val, tol=rank_eps)
+
         return rank1, rank2
 
 
-
-
-    def polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w):
-        constraints = SLS_data.SLP_constraints()
-        Poly_xu = Poly_x.cart(Poly_u)
-        Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
-        constraints += [Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
-                        Lambda @ Poly_w.h <= Poly_xu.h]
-
-        Tplus1 = SLS_data.T + 1
-        nx = SLS_data.nx
-        constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, nx, Tplus1)
-        if nx == SLS_data.ny:
-            constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, nx, Tplus1)
-
-        return constraints, Lambda
-
-
-    def no_communication_block_u1_to_u2(Phi_uy, Tplus1):
-        """
-        Enforce the sub-block mapping from y1 to u2 is all zeros.
-        """
-        constraints = []
-        row_start = 2*Tplus1
-        row_end   = 4*Tplus1
-        col_start = 0
-        col_end   = 2*Tplus1
-        for i in range(row_start, row_end):
-            for j in range(col_start, col_end):
-                constraints.append(Phi_uy[i,j] == 0)
-        return constraints
-
-
-    def no_communication_block_u2_to_u1(Phi_uy, Tplus1):
-        constraints = []
-        row_start = 0
-        row_end   = 2*Tplus1
-        col_start = 2*Tplus1
-        col_end   = 4*Tplus1
-        for i in range(row_start, row_end):
-            for j in range(col_start, col_end):
-                constraints.append(Phi_uy[i,j] == 0)
-        return constraints
 
 
