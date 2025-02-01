@@ -24,6 +24,9 @@ B_0 = np.block([[np.zeros([2,2])],[np.eye(2)]])
 A = sp.linalg.expm(A_0*dt)
 B = np.sum([np.linalg.matrix_power(A_0*dt,i)/math.factorial(i+1) for i in np.arange(100)], axis=0).dot(B_0)
 C = np.block([[np.eye(2), np.zeros([2,2])]])
+print("A:", A)
+print("B:", B)
+print("C:", C)
 A_list = (T+1)*[A]; B_list = (T+1)*[B]; C_list = (T+1)*[C]
 max_v = 2
 max_x0 = 1

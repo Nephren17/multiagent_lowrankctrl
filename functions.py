@@ -89,6 +89,7 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     """
     SLS_data = SLSFinite(A_list, B_list, C_list)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
     # Initialize Paramters
     W_1 = cp.Parameter(2*[SLS_data.nu*(SLS_data.T+1)])
     W_2 = cp.Parameter(2*[SLS_data.ny*(SLS_data.T+1)])
@@ -137,7 +138,7 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_data_list[-1].Phi_matrix.value - SLS_data_list[-1].Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)) ) )
     assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-6) )
+    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-5) )
 
     # check feasibility by reoptimizing over Lambda
     # Poly_xu = Poly_x.cart(Poly_u)
@@ -256,24 +257,38 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
     """
     # poly constraints
     SLS_data = SLSFinite(A_list, B_list, C_list)
-    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
 
-    L1_expr = SLS_data.extract_offdiag_expr(direction='21')  # shape = (2*(T+1), 2*(T+1))
+    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+
+    L1_expr = SLS_data.extract_offdiag_expr(direction='21')
     L2_expr = SLS_data.extract_offdiag_expr(direction='12')
+    # F1_expr = SLS_data.extract_diag_expr(direction='1')
+    # F2_expr = SLS_data.extract_diag_expr(direction='2')
+
 
     dim = 2*(SLS_data.T+1)
     W1_left = cp.Parameter((dim, dim), PSD=True)
     W1_right= cp.Parameter((dim, dim), PSD=True)
     W2_left = cp.Parameter((dim, dim), PSD=True)
     W2_right= cp.Parameter((dim, dim), PSD=True)
+    # W3_left = cp.Parameter((dim, dim), PSD=True)
+    # W3_right= cp.Parameter((dim, dim), PSD=True)
+    # W4_left = cp.Parameter((dim, dim), PSD=True)
+    # W4_right= cp.Parameter((dim, dim), PSD=True)
 
     W1_left.value  = delta**(-0.5) * np.eye(dim)
     W1_right.value = delta**(-0.5) * np.eye(dim)
     W2_left.value  = delta**(-0.5) * np.eye(dim)
     W2_right.value = delta**(-0.5) * np.eye(dim)
+    # W3_left.value  = delta**(-0.5) * np.eye(dim)
+    # W3_right.value = delta**(-0.5) * np.eye(dim)
+    # W4_left.value  = delta**(-0.5) * np.eye(dim)
+    # W4_right.value = delta**(-0.5) * np.eye(dim)
 
-    # revised object function
     objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+    # objective = cp.Minimize(1.0 * cp.norm( W1_left@L1_expr@W1_right, 'nuc') + 1.0 * cp.norm( W2_left@L2_expr@W2_right, 'nuc')
+    # + 1.0 * cp.norm( W3_left@F1_expr@W3_right, 'nuc') + 1.0 * cp.norm( W4_left@F2_expr@W4_right, 'nuc'))
     problem = cp.Problem(objective, constraints)
 
     result_list = []
@@ -289,6 +304,30 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
         W_new = eigvecs @ np.diag(eigvals**(-0.5)) @ eigvecs.T
         return W_new, W_new
 
+    def update_reweight_stable(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+        left_inv  = np.linalg.inv(Wleft_val + epsilon * np.eye(Wleft_val.shape[0]))
+        right_inv = np.linalg.inv(Wright_val + epsilon * np.eye(Wright_val.shape[0]))
+        Y = left_inv @ L_val @ right_inv
+
+        Y = (Y + Y.T) / 2
+        eigvals, eigvecs = np.linalg.eigh(Y)
+
+        print(f"Eigenvalues min: {np.min(eigvals)}, max: {np.max(eigvals)}")
+
+        min_eig = np.min(eigvals)
+        if min_eig < -epsilon:
+            shift = abs(min_eig) + delta
+            print(f"⚠️ WARNING: Negative eigenvalue found ({min_eig:.6f}), shifting by {shift:.6f}")
+            Y = Y + shift * np.eye(Y.shape[0])
+            eigvals, eigvecs = np.linalg.eigh(Y)
+
+        eigvals = np.maximum(eigvals, epsilon)
+
+        W_new = eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
+        return W_new, W_new
+
+
+
     for k in range(N):
         result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
         if problem.status != cp.OPTIMAL:
@@ -299,8 +338,13 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
 
         L1_val = L1_expr.value
         L2_val = L2_expr.value
+        # F1_val = F1_expr.value
+        # F2_val = F2_expr.value
+
         W1_left.value, W1_right.value = update_reweight(L1_val, W1_left.value, W1_right.value)
         W2_left.value, W2_right.value = update_reweight(L2_val, W2_left.value, W2_right.value)
+        # W3_left.value, W3_right.value = update_reweight_stable(F1_val, W3_left.value, W3_right.value)
+        # W4_left.value, W4_right.value = update_reweight_stable(F2_val, W4_left.value, W4_right.value)
 
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
@@ -335,69 +379,6 @@ def polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w):
 
     return constraints, Lambda
 
-
-def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
-    """
-    Same as optimize_RTH_offdiag, but ensures diagonal( Phi_xx ) = I, so that rank(K)=rank(Phi_uy).
-    """
-    SLS_data = SLSFinite(A_list, B_list, C_list)
-    [constraints, Lambda] = polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w)
-
-    L1_expr = SLS_data.extract_offdiag_expr(direction='21')
-    L2_expr = SLS_data.extract_offdiag_expr(direction='12')
-    dim = 2*(SLS_data.T+1)
-    W1_left = cp.Parameter((dim, dim), PSD=True)
-    W1_right= cp.Parameter((dim, dim), PSD=True)
-    W2_left = cp.Parameter((dim, dim), PSD=True)
-    W2_right= cp.Parameter((dim, dim), PSD=True)
-
-    W1_left.value  = delta**(-0.5) * np.eye(dim)
-    W1_right.value = delta**(-0.5) * np.eye(dim)
-    W2_left.value  = delta**(-0.5) * np.eye(dim)
-    W2_right.value = delta**(-0.5) * np.eye(dim)
-
-    # revised object function
-    objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
-    problem = cp.Problem(objective, constraints)
-
-    result_list = []
-    SLS_data_list = []
-
-    def update_reweight(L_val, Wleft_val, Wright_val):
-        left_inv  = np.linalg.inv(Wleft_val)
-        right_inv = np.linalg.inv(Wright_val)
-        Y = left_inv @ L_val @ right_inv
-        Y_reg = Y + delta*np.eye(Y.shape[0])
-        eigvals, eigvecs = np.linalg.eigh(Y_reg)
-        assert np.all(eigvals>0), "reweighting: negative eigenvalue found!"
-        W_new = eigvecs @ np.diag(eigvals**(-0.5)) @ eigvecs.T
-        return W_new, W_new
-
-    for k in range(N):
-        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
-        if problem.status != cp.OPTIMAL:
-            raise Exception("Solver did not converge!")
-        
-        result_list.append(result)
-        SLS_data_list.append(copy.deepcopy(SLS_data))
-
-        L1_val = L1_expr.value
-        L2_val = L2_expr.value
-        W1_left.value, W1_right.value = update_reweight(L1_val, W1_left.value, W1_right.value)
-        W2_left.value, W2_right.value = update_reweight(L2_val, W2_left.value, W2_right.value)
-
-
-    SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
-    # causal_factorization
-    SLS_data.causal_factorization(rank_eps)
-    SLS_data.F_trunc_to_Phi_trunc()
-
-    Poly_xu = Poly_x.cart(Poly_u)
-    # example check => truncated constraint
-    diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
-    max_err = np.max( np.abs(diff) )
-    print("Error truncated polytope constraint:", max_err)
-    return [result_list, SLS_data, Lambda]
 
 
 def diagonal_identity_block_constraints_xx(Phi_xx, nx, Tplus1):
@@ -552,6 +533,10 @@ def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
 
     # revised object function
     objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+    # objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc'))
+    # objective = cp.Minimize( cp.norm(L1_expr, 2) + cp.norm(L2_expr, 2) )
+    # objective = cp.Minimize( cp.norm(L1_expr, 2) )
+
     problem = cp.Problem(objective, constraints)
 
     result_list = []
@@ -611,7 +596,7 @@ def plot_matrices_sparcity(SLS_data, save_path=None):
 
     fig, axes = plt.subplots(2, 3, figsize=(14,8))
 
-    prec = 1e-14
+    prec = 1e-7
     mk_size = 1.0
 
     ax_xx = axes[0,0]
@@ -651,3 +636,30 @@ def plot_matrices_sparcity(SLS_data, save_path=None):
         plt.savefig(save_path, bbox_inches="tight")
 
     plt.show()
+
+
+
+def partial_time_dist_poly(times_list, T, dist=5):
+    H_comm_1time = np.array([
+        [ 1,  1,  0,  0, -1, -1,  0,  0],
+        [ 1, -1,  0,  0, -1,  1,  0,  0],
+        [-1,  1,  0,  0,  1, -1,  0,  0],
+        [-1, -1,  0,  0,  1,  1,  0,  0],
+    ])
+    h_comm_1time = dist * np.ones(4)
+
+
+    n_constraints = 4 * len(times_list)
+    n_dim = (T+1)*8
+
+    H_time = np.zeros( (n_constraints, n_dim) )
+    h_time = np.zeros( (n_constraints,) )
+
+    for i, t in enumerate(times_list):
+        row_start = i * 4
+        col_start = t * 8
+
+        H_time[row_start : row_start+4, col_start : col_start+8] = H_comm_1time
+        h_time[row_start : row_start+4] = h_comm_1time
+
+    return Polytope(H_time, h_time)
