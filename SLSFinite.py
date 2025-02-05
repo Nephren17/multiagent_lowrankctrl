@@ -284,32 +284,6 @@ class SLSFinite():
         return big_expr
 
 
-    def extract_diag_expr(self, direction='1'):
-        Tplus1 = self.T + 1
-        block_row = 4
-        block_col = 4
-
-        if self.Phi_uy.shape != (4*Tplus1, 4*Tplus1):
-            raise ValueError(f"Phi_uy has shape {self.Phi_uy.shape}, but expected {(4*Tplus1, 4*Tplus1)}.")
-
-        sub_blocks = []
-        for t in range(Tplus1):
-            row_list = []
-            for tau in range(Tplus1):
-                row_start = t * block_row
-                col_start = tau * block_col
-                sub_4x4 = self.Phi_uy[row_start : row_start+block_row,
-                                    col_start : col_start+block_col]
-                if direction == '1':
-                    sub_2x2 = sub_4x4[0:2, 0:2]
-                else:
-                    sub_2x2 = sub_4x4[2:4, 2:4]
-
-                row_list.append(sub_2x2)
-            sub_blocks.append(row_list)
-        big_expr = cp.bmat(sub_blocks)  
-        return big_expr
-
     def compute_offdiag_rank_of_Phi(self, rank_eps=1e-7):
         L1_mat = self.extract_offdiag_expr(direction='21')
         if hasattr(L1_mat, 'value'):
@@ -330,6 +304,9 @@ class SLSFinite():
         rank2 = np.linalg.matrix_rank(L2_val, tol=rank_eps)
 
         return rank1, rank2
+
+
+
 
 
 

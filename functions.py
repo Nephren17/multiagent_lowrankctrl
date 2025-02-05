@@ -50,6 +50,8 @@ def optimize(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps, norm=None)
     # constraints
     SLS_data = SLSFinite(A_list, B_list, C_list, norm)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+
     # objective function
     objective = cp.Minimize(0)
     problem = cp.Problem(objective, constraints)
@@ -89,7 +91,6 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     """
     SLS_data = SLSFinite(A_list, B_list, C_list)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
-    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
     # Initialize Paramters
     W_1 = cp.Parameter(2*[SLS_data.nu*(SLS_data.T+1)])
     W_2 = cp.Parameter(2*[SLS_data.ny*(SLS_data.T+1)])
@@ -249,46 +250,79 @@ def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, de
     return [reopt_result, reopt_SLS, reopt_Lambda, norm_list, reopt_kept_indices, SLS_list]
 
 
+def zero_diag_blocks(phi, T, block_row, block_col):
+    Tplus1 = T + 1
+    expected_shape = (block_row*Tplus1, block_col*Tplus1)
+    if phi.shape != expected_shape:
+        raise ValueError(
+            f"the shape of phi is {phi.shape}, with expectation {expected_shape}."
+        )
+    
+    mask = np.ones((block_row, block_col))
+    r_half = block_row // 2 
+    c_half = block_col // 2 
+    
+    mask[:r_half, :c_half] = 0
+    mask[r_half:, c_half:] = 0
+        
+    sub_blocks = []
+    for t_idx in range(Tplus1):
+        row_list = []
+        for tau_idx in range(Tplus1):
+            row_start = t_idx * block_row
+            col_start = tau_idx * block_col
+            sub_block = phi[row_start : row_start + block_row,
+                            col_start : col_start + block_col]
+            
+            sub_block_zeroed = cp.multiply(mask, sub_block)
+            row_list.append(sub_block_zeroed)
+        sub_blocks.append(row_list)
+
+    M_expr = cp.bmat(sub_blocks)
+    return M_expr
 
 
-def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+
+def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     """
-    minimize rank(L_1) + rank(L_2),
+    Of(Phi) = Off-Diag Parts of Phi
+    minimize rank(Of(Phi_uy)) + rank(Of(Phi_ux)) + rank(Of(Phi_xy)),
+    s.t. Of(Phi_xx) = 0
     """
     # poly constraints
     SLS_data = SLSFinite(A_list, B_list, C_list)
 
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
-    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
 
-    L1_expr = SLS_data.extract_offdiag_expr(direction='21')
-    L2_expr = SLS_data.extract_offdiag_expr(direction='12')
-    # F1_expr = SLS_data.extract_diag_expr(direction='1')
-    # F2_expr = SLS_data.extract_diag_expr(direction='2')
+    L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
+    L_phi_ux = zero_diag_blocks(SLS_data.Phi_ux, SLS_data.T, SLS_data.nu, SLS_data.nx)
+    L_phi_xy = zero_diag_blocks(SLS_data.Phi_xy, SLS_data.T, SLS_data.nx, SLS_data.ny)
 
 
-    dim = 2*(SLS_data.T+1)
-    W1_left = cp.Parameter((dim, dim), PSD=True)
-    W1_right= cp.Parameter((dim, dim), PSD=True)
-    W2_left = cp.Parameter((dim, dim), PSD=True)
-    W2_right= cp.Parameter((dim, dim), PSD=True)
-    # W3_left = cp.Parameter((dim, dim), PSD=True)
-    # W3_right= cp.Parameter((dim, dim), PSD=True)
-    # W4_left = cp.Parameter((dim, dim), PSD=True)
-    # W4_right= cp.Parameter((dim, dim), PSD=True)
+    m_uy, n_uy = L_phi_uy.shape
+    m_ux, n_ux = L_phi_ux.shape
+    m_xy, n_xy = L_phi_xy.shape
 
-    W1_left.value  = delta**(-0.5) * np.eye(dim)
-    W1_right.value = delta**(-0.5) * np.eye(dim)
-    W2_left.value  = delta**(-0.5) * np.eye(dim)
-    W2_right.value = delta**(-0.5) * np.eye(dim)
-    # W3_left.value  = delta**(-0.5) * np.eye(dim)
-    # W3_right.value = delta**(-0.5) * np.eye(dim)
-    # W4_left.value  = delta**(-0.5) * np.eye(dim)
-    # W4_right.value = delta**(-0.5) * np.eye(dim)
+    W1_left = cp.Parameter((m_uy, m_uy), PSD=True)
+    W1_right= cp.Parameter((n_uy, n_uy), PSD=True)
+    W2_left = cp.Parameter((m_ux, m_ux), PSD=True)
+    W2_right= cp.Parameter((n_ux, n_ux), PSD=True)
+    W3_left = cp.Parameter((m_xy, m_xy), PSD=True)
+    W3_right= cp.Parameter((n_xy, n_xy), PSD=True)
 
-    objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
-    # objective = cp.Minimize(1.0 * cp.norm( W1_left@L1_expr@W1_right, 'nuc') + 1.0 * cp.norm( W2_left@L2_expr@W2_right, 'nuc')
-    # + 1.0 * cp.norm( W3_left@F1_expr@W3_right, 'nuc') + 1.0 * cp.norm( W4_left@F2_expr@W4_right, 'nuc'))
+    W1_left.value  = delta**(-0.5) * np.eye(m_uy)
+    W1_right.value = delta**(-0.5) * np.eye(n_uy)
+    W2_left.value  = delta**(-0.5) * np.eye(m_ux)
+    W2_right.value = delta**(-0.5) * np.eye(n_ux)
+    W3_left.value  = delta**(-0.5) * np.eye(m_xy)
+    W3_right.value = delta**(-0.5) * np.eye(n_xy)
+
+
+    # objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+    objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc') + 1.0 * cp.norm( W2_left@L_phi_ux@W2_right, 'nuc')
+    + 1.0 * cp.norm( W3_left@L_phi_xy@W3_right, 'nuc'))
+
     problem = cp.Problem(objective, constraints)
 
     result_list = []
@@ -326,6 +360,17 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
         W_new = eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
         return W_new, W_new
 
+    def update_reweight_stable_rect(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+        U, s, Vt = np.linalg.svd(L_val, full_matrices=False)
+        s = np.maximum(s, epsilon)
+        inv_sqrt_s = 1.0 / np.sqrt(s)
+
+        Lambda_U = np.diag(inv_sqrt_s)
+        Lambda_V = np.diag(inv_sqrt_s)
+
+        Wleft_new = U @ Lambda_U @ U.T
+        Wright_new= Vt.T @ Lambda_V @ Vt
+        return Wleft_new, Wright_new
 
 
     for k in range(N):
@@ -336,16 +381,13 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
         result_list.append(result)
         SLS_data_list.append(copy.deepcopy(SLS_data))
 
-        L1_val = L1_expr.value
-        L2_val = L2_expr.value
-        # F1_val = F1_expr.value
-        # F2_val = F2_expr.value
+        L_phi_uy_val = L_phi_uy.value
+        L_phi_ux_val = L_phi_ux.value
+        L_phi_xy_val = L_phi_xy.value
 
-        W1_left.value, W1_right.value = update_reweight(L1_val, W1_left.value, W1_right.value)
-        W2_left.value, W2_right.value = update_reweight(L2_val, W2_left.value, W2_right.value)
-        # W3_left.value, W3_right.value = update_reweight_stable(F1_val, W3_left.value, W3_right.value)
-        # W4_left.value, W4_right.value = update_reweight_stable(F2_val, W4_left.value, W4_right.value)
-
+        W1_left.value, W1_right.value = update_reweight_stable_rect(L_phi_uy_val, W1_left.value, W1_right.value)
+        W2_left.value, W2_right.value = update_reweight_stable_rect(L_phi_ux_val, W2_left.value, W2_right.value)
+        W3_left.value, W3_right.value = update_reweight_stable_rect(L_phi_xy_val, W3_left.value, W3_right.value)
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
     # causal_factorization
@@ -362,7 +404,75 @@ def optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, d
 
 
 
-def polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w):
+
+
+def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+    """
+    minimize rank(Of(Phi_uy))
+    """
+    # poly constraints
+    SLS_data = SLSFinite(A_list, B_list, C_list)
+
+    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+
+    L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
+
+    m_uy, n_uy = L_phi_uy.shape
+
+    W1_left = cp.Parameter((m_uy, m_uy), PSD=True)
+    W1_right= cp.Parameter((n_uy, n_uy), PSD=True)
+
+
+    W1_left.value  = delta**(-0.5) * np.eye(m_uy)
+    W1_right.value = delta**(-0.5) * np.eye(n_uy)
+
+    objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc'))
+    problem = cp.Problem(objective, constraints)
+
+    result_list = []
+    SLS_data_list = []
+
+    def update_reweight_stable_rect(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+        U, s, Vt = np.linalg.svd(L_val, full_matrices=False)
+        s = np.maximum(s, epsilon)
+        inv_sqrt_s = 1.0 / np.sqrt(s)
+
+        Lambda_U = np.diag(inv_sqrt_s)
+        Lambda_V = np.diag(inv_sqrt_s)
+
+        Wleft_new = U @ Lambda_U @ U.T
+        Wright_new= Vt.T @ Lambda_V @ Vt
+        return Wleft_new, Wright_new
+
+
+    for k in range(N):
+        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
+        if problem.status != cp.OPTIMAL:
+            raise Exception("Solver did not converge!")
+        
+        result_list.append(result)
+        SLS_data_list.append(copy.deepcopy(SLS_data))
+
+        L_phi_uy_val = L_phi_uy.value
+        W1_left.value, W1_right.value = update_reweight_stable_rect(L_phi_uy_val, W1_left.value, W1_right.value)
+
+    SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
+    # causal_factorization
+    SLS_data.causal_factorization(rank_eps)
+    SLS_data.F_trunc_to_Phi_trunc()
+
+    Poly_xu = Poly_x.cart(Poly_u)
+    # example check => truncated constraint
+    diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
+    max_err = np.max( np.abs(diff) )
+    print("Error truncated polytope constraint:", max_err)
+
+    return [result_list, SLS_data, Lambda]
+
+
+
+
+def polytope_constraints_three_phi_diag(SLS_data, Poly_x, Poly_u, Poly_w):
     constraints = SLS_data.SLP_constraints()
     Poly_xu = Poly_x.cart(Poly_u)
     Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
@@ -514,9 +624,10 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
 '''
 The constraint on phi_ux is removed. Optimize Off-diag of phi_uy - phi_ux
 '''
-def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     SLS_data = SLSFinite(A_list, B_list, C_list)
-    [constraints, Lambda] = polytope_constraints_diagI(SLS_data, Poly_x, Poly_u, Poly_w)
+    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
 
     L1_expr = SLS_data.extract_offdiag_expr(direction='21')
     L2_expr = SLS_data.extract_offdiag_expr(direction='12')
@@ -531,25 +642,29 @@ def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
     W2_left.value  = delta**(-0.5) * np.eye(dim)
     W2_right.value = delta**(-0.5) * np.eye(dim)
 
-    # revised object function
     objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
-    # objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc'))
-    # objective = cp.Minimize( cp.norm(L1_expr, 2) + cp.norm(L2_expr, 2) )
-    # objective = cp.Minimize( cp.norm(L1_expr, 2) )
-
     problem = cp.Problem(objective, constraints)
 
     result_list = []
     SLS_data_list = []
 
-    def update_reweight(L_val, Wleft_val, Wright_val):
-        left_inv  = np.linalg.inv(Wleft_val)
-        right_inv = np.linalg.inv(Wright_val)
+    def update_reweight_stable(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+        left_inv  = np.linalg.inv(Wleft_val + epsilon * np.eye(Wleft_val.shape[0]))
+        right_inv = np.linalg.inv(Wright_val + epsilon * np.eye(Wright_val.shape[0]))
         Y = left_inv @ L_val @ right_inv
-        Y_reg = Y + delta*np.eye(Y.shape[0])
-        eigvals, eigvecs = np.linalg.eigh(Y_reg)
-        assert np.all(eigvals>0), "reweighting: negative eigenvalue found!"
-        W_new = eigvecs @ np.diag(eigvals**(-0.5)) @ eigvecs.T
+        Y = (Y + Y.T) / 2
+        eigvals, eigvecs = np.linalg.eigh(Y)
+        print(f"Eigenvalues min: {np.min(eigvals)}, max: {np.max(eigvals)}")
+
+        min_eig = np.min(eigvals)
+        if min_eig < -epsilon:
+            shift = abs(min_eig) + delta
+            print(f"⚠️ WARNING: Negative eigenvalue found ({min_eig:.6f}), shifting by {shift:.6f}")
+            Y = Y + shift * np.eye(Y.shape[0])
+            eigvals, eigvecs = np.linalg.eigh(Y)
+
+        eigvals = np.maximum(eigvals, epsilon)
+        W_new = eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
         return W_new, W_new
 
     for k in range(N):
@@ -562,8 +677,8 @@ def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
 
         L1_val = L1_expr.value
         L2_val = L2_expr.value
-        W1_left.value, W1_right.value = update_reweight(L1_val, W1_left.value, W1_right.value)
-        W2_left.value, W2_right.value = update_reweight(L2_val, W2_left.value, W2_right.value)
+        W1_left.value, W1_right.value = update_reweight_stable(L1_val, W1_left.value, W1_right.value)
+        W2_left.value, W2_right.value = update_reweight_stable(L2_val, W2_left.value, W2_right.value)
 
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
@@ -580,8 +695,20 @@ def optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
 
 
 
-def plot_matrices_sparcity(SLS_data, save_path=None):
 
+
+def _draw_block_lines(ax, matrix_shape, row_block_size, col_block_size, color='lightcoral', linestyle='--', linewidth=0.8):
+
+    nrows, ncols = matrix_shape
+
+    for r in range(row_block_size, nrows, row_block_size):
+        ax.axhline(r - 0.5, color=color, linestyle=linestyle, linewidth=linewidth)
+
+    for c in range(col_block_size, ncols, col_block_size):
+        ax.axvline(c - 0.5, color=color, linestyle=linestyle, linewidth=linewidth)
+
+
+def plot_matrices_sparcity(SLS_data, save_path=None):
     phi_xx_val = SLS_data.Phi_xx.value
     phi_xy_val = SLS_data.Phi_xy.value
     phi_ux_val = SLS_data.Phi_ux.value
@@ -593,41 +720,40 @@ def plot_matrices_sparcity(SLS_data, save_path=None):
     if F_val is None:
         raise ValueError("SLS_data.F is None. You must run calculate_dependent_variables(...) first.")
 
-
-    fig, axes = plt.subplots(2, 3, figsize=(14,8))
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
 
     prec = 1e-7
     mk_size = 1.0
 
-    ax_xx = axes[0,0]
-    ax_xy = axes[0,1]
-    ax_ux = axes[0,2]
+    ax_xx = axes[0, 0]
+    ax_xy = axes[0, 1]
+    ax_ux = axes[0, 2]
 
-    ax_uy = axes[1,0]
-    ax_F  = axes[1,1]
+    ax_uy = axes[1, 0]
+    ax_F  = axes[1, 1]
 
-    # Phi_xx
     ax_xx.spy(phi_xx_val, precision=prec, markersize=mk_size, aspect='auto')
     ax_xx.set_title("Phi_xx")
+    _draw_block_lines(ax_xx, phi_xx_val.shape, row_block_size=8, col_block_size=8)
 
-    # Phi_xy
     ax_xy.spy(phi_xy_val, precision=prec, markersize=mk_size, aspect='auto')
     ax_xy.set_title("Phi_xy")
+    _draw_block_lines(ax_xy, phi_xy_val.shape, row_block_size=8, col_block_size=4)
 
-    # Phi_ux
     ax_ux.spy(phi_ux_val, precision=prec, markersize=mk_size, aspect='auto')
     ax_ux.set_title("Phi_ux")
+    _draw_block_lines(ax_ux, phi_ux_val.shape, row_block_size=4, col_block_size=8)
 
-    # Phi_uy
     ax_uy.spy(phi_uy_val, precision=prec, markersize=mk_size, aspect='auto')
     ax_uy.set_title("Phi_uy")
+    _draw_block_lines(ax_uy, phi_uy_val.shape, row_block_size=4, col_block_size=4)
 
-    # F
     ax_F.spy(F_val, precision=prec, markersize=mk_size, aspect='auto')
     ax_F.set_title("F (closed-loop)")
+    _draw_block_lines(ax_F, F_val.shape, row_block_size=4, col_block_size=4)
 
-    axes[1,2].axis("off")
-    axes[1,2].set_title("")
+    axes[1, 2].axis("off")
+    axes[1, 2].set_title("")
 
     fig.suptitle("Phi and F Matrices Visualization", fontsize=14)
     fig.tight_layout()
@@ -636,6 +762,7 @@ def plot_matrices_sparcity(SLS_data, save_path=None):
         plt.savefig(save_path, bbox_inches="tight")
 
     plt.show()
+
 
 
 

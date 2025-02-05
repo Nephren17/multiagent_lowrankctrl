@@ -18,7 +18,7 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 np.random.seed(1)
 
-T = 20
+T = 10
 dt = 1
 
 A_0 = np.block([[np.zeros([2, 2]), np.eye(2)], [np.zeros([2, 2]), np.zeros([2, 2])]])
@@ -27,17 +27,10 @@ A = sp.linalg.expm(A_0 * dt)
 B = np.sum([np.linalg.matrix_power(A_0 * dt, i) / math.factorial(i + 1) for i in np.arange(100)], axis=0).dot(B_0)
 C = np.block([[np.eye(2), np.zeros([2, 2])]])
 
-# C_test = np.array([
-#     [1, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 1, 0, 0, 0],
-#     [0, 1, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 1, 0, 0],
-# ])
 
 A_joint = sp.linalg.block_diag(A, A)
 B_joint = sp.linalg.block_diag(B, B)
 C_joint = sp.linalg.block_diag(C, C)
-# C_joint = C_test
 
 A_list = (T + 1) * [A_joint]
 B_list = (T + 1) * [B_joint]
@@ -47,7 +40,7 @@ max_v1 = 2
 max_v2 = 4
 max_x0 = 1
 max_v0 = 0
-box_x = 15
+box_x = 7
 
 comm_dist = 12
 
@@ -56,20 +49,20 @@ center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
 radius_times_uav1 = (T + 1) * [[box_x, box_x, max_v1, max_v1]]
 radius_times_uav2 = (T + 1) * [[box_x, box_x, max_v2, max_v2]]
 
-box_check = [0,20]
+box_check = [0,10]
 
-center_times_uav1[box_check[0]] = [-9, 7, 0, 0]
+center_times_uav1[box_check[0]] = [-5, 4, 0, 0]
 radius_times_uav1[box_check[0]] = [max_x0, max_x0, max_v0, max_v0]
 # center_times_uav1[box_check[1]] = [0, 4, 0, 0]
 # radius_times_uav1[box_check[1]] = [3, 3, max_v, max_v]
-center_times_uav1[box_check[1]] = [9, 7, 0, 0]
-radius_times_uav1[box_check[1]] = [8, 8, 1, 1]
+center_times_uav1[box_check[1]] = [5, 4, 0, 0]
+radius_times_uav1[box_check[1]] = [5, 5, 1, 1]
 
-center_times_uav2[box_check[0]] = [-9, -7, 0, 0]
+center_times_uav2[box_check[0]] = [-5, -5, 0, 0]
 radius_times_uav2[box_check[0]] = [max_x0, max_x0, max_v0, max_v0]
 # center_times_uav2[box_check[1]] = [0, -5, 0, 0]
 # radius_times_uav2[box_check[1]] = [3, 3, max_v, max_v]
-center_times_uav2[box_check[1]] = [9, -7, 0, 0]
+center_times_uav2[box_check[1]] = [5, -4, 0, 0]
 radius_times_uav2[box_check[1]] = [1.5, 1.5, 1, 1]
 
 center_times = [center_times_uav1[i] + center_times_uav2[i] for i in range(T + 1)]
@@ -87,7 +80,7 @@ Poly_u = H_cube([0, 0, 0, 0],[uav1_x_max, uav1_y_max, uav2_x_max, uav2_y_max]).c
 
 
 wx_1_scale = 0.2
-wy_1_scale = 0.6
+wy_1_scale = 0.5
 wx_2_scale = 0.05
 wy_2_scale = 0.05
 wxdot_1_scale = 0.05
@@ -100,31 +93,15 @@ delta = 0.01
 RTH_opt_eps = 1e-11
 sparse_opt_eps = 1e-10
 rank_eps = 1e-7
-N = 8
+N = 6
 
 Poly_w = H_cube(center_times[0], radius_times[0]).cart(
     H_cube([0, 0, 0, 0, 0, 0, 0, 0], [wx_1_scale,wy_1_scale,wx_2_scale,wy_2_scale,wxdot_1_scale,wydot_1_scale,wxdot_2_scale,wydot_2_scale]).cartpower(T)
 ).cart(H_cube([0, 0, 0, 0], [v_scale] * 4).cartpower(T + 1))
 
-# H_comm = np.array([
-#     [ 1,  1,  0,  0, -1, -1,  0,  0],  # (x1 - x2) + (y1 - y2) <= comm_dist
-#     [ 1, -1,  0,  0, -1,  1,  0,  0],
-#     [-1,  1,  0,  0,  1, -1,  0,  0],
-#     [-1, -1,  0,  0,  1,  1,  0,  0],
-# ])
-# h_comm = comm_dist * np.ones(4)
-# Poly_comm_single = Polytope(H_comm, h_comm)
-# Poly_comm = Poly_comm_single.cartpower(T + 1)
 
-Poly_comm = partial_time_dist_poly([5,15], T, dist=6)
+Poly_comm = partial_time_dist_poly([3,7], T, dist=5)
 Poly_x = poly_intersect(Poly_x, Poly_comm)
-
-
-
-
-# print("Poly_w.H shape:", Poly_w.H.shape)
-# print("Poly_x.H shape:", Poly_x.H.shape)
-# print("Poly_u.H shape:", Poly_u.H.shape)
 
 
 
@@ -161,33 +138,38 @@ optimize_sparsity_sensor_output.append(t3)
 
 
 # multi-agent communication matrix optimization
-print("begin offdiag optimization")
-key = 'Offdiag Communication'
+print("begin offdiag no constraint optimization")
+key = 'Offdiag Phiuy Only'
 start = time.time()
-optimize_offdiag_output = optimize_RTH_offdiag(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
+optimize_offdiag_output = optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
 t4 = time.time() - start
 optimize_offdiag_output.append(t4)
+
+
+print("begin offdiag optimization phixx constrained")
+key = 'Offdiag Phiuy Constrain Phixx'
+start = time.time()
+optimize_offdiag_xx_output = optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
+t5 = time.time() - start
+optimize_offdiag_xx_output.append(t5)
+
+print("begin offdiag three phi optimization")
+key = 'Offdiag Three Phis Constrain Phixx'
+start = time.time()
+optimize_offdiag_three_output = optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
+t6 = time.time() - start
+optimize_offdiag_three_output.append(t6)
 
 
 data = {
 'Reweighted Nuclear Norm': optimize_RTH_output,
 'Reweighted Actuator Norm': optimize_sparsity_actuator_output,
 'Reweighted Sensor Norm': optimize_sparsity_sensor_output,
-'Offdiag Communication': optimize_offdiag_output,
-'Offdiag Communication diagI': None,
+'Offdiag Phiuy Only': optimize_offdiag_output,
+'Offdiag Phiuy Constrain Phixx': optimize_offdiag_xx_output,
+'Offdiag Three Phis Constrain Phixx': optimize_offdiag_three_output,
 'No Communication': None
 }
-
-
-key_diag = 'Offdiag Communication diagI'
-if comm_dist >= 200:
-    start = time.time()
-    optimize_offdiag_diagI_output = optimize_RTH_offdiag_diagI(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w,N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
-    t5 = time.time() - start
-    optimize_offdiag_diagI_output.append(t5)
-    data['Offdiag Communication diagI'] = optimize_offdiag_diagI_output
-else:
-    data['Offdiag Communication diagI'] = None
 
 # multi-agent without any communication
 key_diag = 'No Communication'
@@ -209,8 +191,9 @@ simulation_data = pickle.load(open(file, "rb"))
 optimize_RTH_data = simulation_data['Reweighted Nuclear Norm']
 optimize_actuator_data = simulation_data['Reweighted Actuator Norm']
 optimize_sensor_data = simulation_data['Reweighted Sensor Norm']
-offdiag_data = simulation_data['Offdiag Communication']
-offdiag_diagI_data = simulation_data['Offdiag Communication diagI']
+offdiag_phiuy_only_data = simulation_data['Offdiag Phiuy Only']
+offdiag_phixx_constrained_data = simulation_data['Offdiag Phiuy Constrain Phixx']
+offdiag_three_phis_data = simulation_data['Offdiag Three Phis Constrain Phixx']
 no_comm_data = simulation_data['No Communication']
 
 
@@ -576,12 +559,11 @@ print("UAV1->UAV2 messages:", msg_12)
 
 
 
-SLS_offdiag = offdiag_data[1]
-Lambda_offdiag = offdiag_data[2]
-time_offdiag = offdiag_data[-1]
-
+SLS_offdiag = offdiag_phiuy_only_data[1]
+Lambda_offdiag = offdiag_phiuy_only_data[2]
+time_offdiag = offdiag_phiuy_only_data[-1]
 print()
-print("--- Offdiag Communication -----------------------------------------------------")
+print("--- Offdiag Phi_uy Only -----------------------------------------------------")
 print("Com time:", time_offdiag)
 Poly_xu = Poly_x.cart(Poly_u)
 diff = Lambda_offdiag.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_offdiag.Phi_trunc)
@@ -616,22 +598,39 @@ with open("OffdiagMatrices.txt","w") as f:
     f.write(str(L12) + "\n\n")
 print("F, L21, L12 have been written to 'OffdiagMatrices.txt' for inspection.")
 
-if offdiag_diagI_data is not None:
-    SLS_offdiag_diagI = offdiag_diagI_data[1]
-    Lambda_diagI = offdiag_diagI_data[2]
-    time_diagI = offdiag_diagI_data[-1]
-    print()
-    print("--- Offdiag Communication diagI ------------------------------------")
-    print("Com time diagI:", time_diagI)
-    SLS_offdiag_diagI.calculate_dependent_variables("Reweighted Nuclear Norm")
-    plot_matrices_sparcity(SLS_offdiag_diagI)
-    SLS_offdiag_diagI.causal_factorization(rank_eps=1e-7)
-    msg_21_diagI, msg_12_diagI = SLS_offdiag_diagI.compute_communication_messages(rank_eps=1e-7)
-    print("UAV2->UAV1 messages diagI:", msg_21_diagI)
-    print("UAV1->UAV2 messages diagI:", msg_12_diagI)
-    rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
-    print("Supposed Rank of L1 and L2:")
-    print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
+
+SLS_offdiag_diagI = offdiag_phixx_constrained_data[1]
+time_diagI = offdiag_phixx_constrained_data[-1]
+print()
+print("--- Offdiag Communication diagI ------------------------------------")
+print("Com time diagI:", time_diagI)
+SLS_offdiag_diagI.calculate_dependent_variables("Reweighted Nuclear Norm")
+plot_matrices_sparcity(SLS_offdiag_diagI)
+SLS_offdiag_diagI.causal_factorization(rank_eps=1e-7)
+msg_21_diagI, msg_12_diagI = SLS_offdiag_diagI.compute_communication_messages(rank_eps=1e-7)
+print("UAV2->UAV1 messages diagI:", msg_21_diagI)
+print("UAV1->UAV2 messages diagI:", msg_12_diagI)
+rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
+print("Supposed Rank of L1 and L2:")
+print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
+
+SLS_offdiag_three_Phi = offdiag_three_phis_data[1]
+time_three_Phi = offdiag_three_phis_data[-1]
+print()
+print("--- Offdiag Communication diagI ------------------------------------")
+print("Com time diagI:", time_three_Phi)
+SLS_offdiag_three_Phi.calculate_dependent_variables("Reweighted Nuclear Norm")
+plot_matrices_sparcity(SLS_offdiag_three_Phi)
+SLS_offdiag_three_Phi.causal_factorization(rank_eps=1e-7)
+msg_21_diagI, msg_12_diagI = SLS_offdiag_three_Phi.compute_communication_messages(rank_eps=1e-7)
+print("UAV2->UAV1 messages diagI:", msg_21_diagI)
+print("UAV1->UAV2 messages diagI:", msg_12_diagI)
+rank_L1, rank_L2 = SLS_offdiag_three_Phi.compute_offdiag_rank_of_Phi()
+print("Supposed Rank of L1 and L2:")
+print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
 
 
 
@@ -652,6 +651,7 @@ if no_comm_data is not None:
     rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
     print("Supposed Rank of L1 and L2:")
     print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+
 
 
 plt.show()
