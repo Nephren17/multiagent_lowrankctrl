@@ -4,6 +4,7 @@ import scipy as sp
 from SLSFinite import *
 from Polytope import *
 from functions import *
+from utils import *
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as patches
@@ -18,7 +19,7 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 np.random.seed(1)
 
-T = 20
+T = 10
 dt = 1
 
 A_0 = np.block([[np.zeros([2, 2]), np.eye(2)], [np.zeros([2, 2]), np.zeros([2, 2])]])
@@ -46,29 +47,29 @@ max_v1 = 2
 max_v2 = 2
 max_x0 = 1
 max_v0 = 0
-box_x = 15
+box_x = 7
 
-comm_dist = 30
+comm_dist = 12
 
 center_times_uav1 = (T + 1) * [[0, 0, 0, 0]]
 center_times_uav2 = (T + 1) * [[0, 0, 0, 0]]
 radius_times_uav1 = (T + 1) * [[box_x, box_x, max_v1, max_v1]]
 radius_times_uav2 = (T + 1) * [[box_x, box_x, max_v2, max_v2]]
 
-box_check = [0,10,20]
+box_check = [0,5,10]
 
-center_times_uav1[box_check[0]] = [-7, -7, 0, 0]
+center_times_uav1[box_check[0]] = [-3, -3, 0, 0]
 radius_times_uav1[box_check[0]] = [max_x0, max_x0, max_v0, max_v0]
-center_times_uav1[box_check[1]] = [7, -7, 0, 0]
+center_times_uav1[box_check[1]] = [3, -3, 0, 0]
 radius_times_uav1[box_check[1]] = [2, 2, max_v1, max_v1]
-center_times_uav1[box_check[2]] = [7, 7, 0, 0]
+center_times_uav1[box_check[2]] = [3, 3, 0, 0]
 radius_times_uav1[box_check[2]] = [2, 2, 1, 1]
 
-center_times_uav2[box_check[0]] = [-7, -7, 0, 0]
+center_times_uav2[box_check[0]] = [-3, -3, 0, 0]
 radius_times_uav2[box_check[0]] = [max_x0, max_x0, max_v0, max_v0]
-center_times_uav2[box_check[1]] = [-7, 7, 0, 0]
-radius_times_uav2[box_check[1]] = [2, 2, max_v2, max_v2]
-center_times_uav2[box_check[2]] = [7, 7, 0, 0]
+center_times_uav2[box_check[1]] = [-3, 3, 0, 0]
+radius_times_uav2[box_check[1]] = [3, 3, max_v2, max_v2]
+center_times_uav2[box_check[2]] = [2, 2, 0, 0]
 radius_times_uav2[box_check[2]] = [2, 2, 1, 1]
 
 center_times = [center_times_uav1[i] + center_times_uav2[i] for i in range(T + 1)]
@@ -99,7 +100,7 @@ delta = 0.01
 RTH_opt_eps = 1e-11
 sparse_opt_eps = 1e-10
 rank_eps = 1e-7
-N = 7
+N = 6
 
 Poly_w = H_cube(center_times[0], radius_times[0]).cart(
     H_cube([0, 0, 0, 0, 0, 0, 0, 0], [wx_1_scale,wy_1_scale,wx_2_scale,wy_2_scale,wxdot_1_scale,wydot_1_scale,wxdot_2_scale,wydot_2_scale]).cartpower(T)
@@ -552,6 +553,7 @@ SLS_nuc.calculate_dependent_variables(key="Reweighted Nuclear Norm")
 msg_21, msg_12 = SLS_nuc.compute_communication_messages(rank_eps=1e-7)
 print("UAV2->UAV1 messages:", msg_21)
 print("UAV1->UAV2 messages:", msg_12)
+SLS_nuc.display_mesage_time()
 
 
 
@@ -594,6 +596,7 @@ with open("OffdiagMatrices.txt","w") as f:
     f.write("=== L12 matrix (UAV1->UAV2) ===\n")
     f.write(str(L12) + "\n\n")
 print("F, L21, L12 have been written to 'OffdiagMatrices.txt' for inspection.")
+SLS_offdiag.display_mesage_time()
 
 
 
@@ -611,6 +614,8 @@ print("UAV1->UAV2 messages diagI:", msg_12_diagI)
 rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
 print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+SLS_offdiag_diagI.display_mesage_time()
+
 
 
 SLS_offdiag_three_Phi = offdiag_three_phis_data[1]
@@ -627,7 +632,7 @@ print("UAV1->UAV2 messages diagI:", msg_12_diagI)
 rank_L1, rank_L2 = SLS_offdiag_three_Phi.compute_offdiag_rank_of_Phi()
 print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
-
+SLS_offdiag_three_Phi.display_mesage_time()
 
 
 
@@ -648,6 +653,7 @@ if no_comm_data is not None:
     rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
     print("Supposed Rank of L1 and L2:")
     print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
+    SLS_no_comm.display_mesage_time()
 
 
 plt.show()

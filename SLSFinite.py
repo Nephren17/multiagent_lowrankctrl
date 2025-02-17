@@ -1,5 +1,6 @@
 import numpy as np
 import cvxpy as cp
+from utils import *
 from scipy.linalg import block_diag
 import time
 
@@ -257,6 +258,7 @@ class SLSFinite():
 
 
 
+
     def extract_offdiag_expr(self, direction='21'):
         Tplus1 = self.T + 1
         block_row = 4
@@ -306,7 +308,116 @@ class SLSFinite():
         return rank1, rank2
 
 
+    def extract_Phi_subcom_mat(self, direction='21'):
+        Tplus1 = self.T + 1
+        block_row = self.nu
+        block_col = self.ny
 
+        big_mat_phiuy = np.zeros((2*Tplus1, 2*Tplus1))
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_4x4 = self.Phi_uy.value[row_start : row_start+block_row,
+                                col_start : col_start+block_col]
+                
+                if direction == '21':
+                    sub_2x2 = sub_4x4[0:2, 2:4]
+                else:
+                    sub_2x2 = sub_4x4[2:4, 0:2]
+
+                big_mat_phiuy[t*2 : (t+1)*2,  tau*2 : (tau+1)*2] = sub_2x2
+
+        block_row = self.nu
+        block_col = self.nx
+        big_mat_phiux = np.zeros((2*Tplus1, 4*Tplus1))
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_4x8 = self.Phi_ux.value[row_start : row_start+block_row,
+                                col_start : col_start+block_col]
+                
+                if direction == '21':
+                    sub_2x4 = sub_4x8[0:2, 4:8]
+                else:
+                    sub_2x4 = sub_4x8[2:4, 0:4]
+
+                big_mat_phiux[t*2 : (t+1)*2,  tau*4 : (tau+1)*4] = sub_2x4
+
+
+        block_row = self.nx
+        block_col = self.ny
+        big_mat_phixy = np.zeros((4*Tplus1, 2*Tplus1))
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_8x4 = self.Phi_xy.value[row_start : row_start+block_row,
+                                col_start : col_start+block_col]
+                
+                if direction == '21':
+                    sub_4x2 = sub_8x4[0:4, 2:4]
+                else:
+                    sub_4x2 = sub_8x4[4:8, 0:2]
+
+                big_mat_phixy[t*4 : (t+1)*4,  tau*2 : (tau+1)*2] = sub_4x2
+        return big_mat_phiuy, big_mat_phiux, big_mat_phixy
+
+
+    def display_mesage_time(self, rank_eps=1e-7):
+        L21 = self.extract_sub_communication_matrix(direction='21')
+        L12 = self.extract_sub_communication_matrix(direction='12')
+
+        print("Message time in L21:")
+        L21_D, L21_E, _ = row_factorization(L21, rank_eps)
+        L21_times = compute_message_time_from_E(L21_E)
+        print(f"  Times (based on E rows): {L21_times}\n")
+        print("Message time in L12:")
+        L12_D, L12_E, _ = row_factorization(L12, rank_eps)
+        L12_times = compute_message_time_from_E(L12_E)
+        print(f"  Times (based on E rows): {L12_times}\n")
+
+
+
+
+        L21_Phiuy, L21_Phiux, L21_Phixy = self.extract_Phi_subcom_mat(direction='21')
+        L12_Phiuy, L12_Phiux, L12_Phixy = self.extract_Phi_subcom_mat(direction='12')
+
+        print("Message time in L21_Phiuy:")
+        L21_PhiuyD, L21_PhiuyE, _ = row_factorization(L21_Phiuy, rank_eps)
+        L21_Phiuy_times = compute_message_time_from_E(L21_PhiuyE)
+        print(f"  Times (based on E rows): {L21_Phiuy_times}\n")
+
+        print("Message time in L21_Phiux:")
+        L21_PhiuxD, L21_PhiuxE, _ = row_factorization(L21_Phiux, rank_eps)
+        L21_Phiux_times = compute_message_time_from_E(L21_PhiuxE)
+        print(f"  Times (based on E rows): {L21_Phiux_times}\n")
+
+        print("Message time in L21_Phixy:")
+        L21_PhixyD, L21_PhixyE, _ = row_factorization(L21_Phixy, rank_eps)
+        L21_Phixy_times = compute_message_time_from_E(L21_PhixyE)
+        print(f"  Times (based on E rows): {L21_Phixy_times}\n")
+
+
+        print("Message time in L12_Phiuy:")
+        L12_PhiuyD, L12_PhiuyE, _ = row_factorization(L12_Phiuy, rank_eps)
+        L12_Phiuy_times = compute_message_time_from_E(L12_PhiuyE)
+        print(f"  Times (based on E rows): {L12_Phiuy_times}\n")
+
+        print("Message time in L12_Phiux:")
+        L12_PhiuxD, L12_PhiuxE, _ = row_factorization(L12_Phiux, rank_eps)
+        L12_Phiux_times = compute_message_time_from_E(L12_PhiuxE)
+        print(f"  Times (based on E rows): {L12_Phiux_times}\n")
+
+        print("Message time in L12_Phixy:")
+        L12_PhixyD, L12_PhixyE, _ = row_factorization(L12_Phixy, rank_eps)
+        L12_Phixy_times = compute_message_time_from_E(L12_PhixyE)
+        print(f"  Times (based on E rows): {L12_Phixy_times}\n")
+
+        return
+
+        
 
 
 

@@ -2,6 +2,7 @@ import numpy as np
 import cvxpy as cp
 from SLSFinite import *
 from Polytope import *
+from utils import *
 import matplotlib
 import matplotlib.pyplot as plt
 import copy
@@ -103,7 +104,12 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     problem = cp.Problem(objective, constraints)
     for k in range(N):
         result = problem.solve(solver=cp.MOSEK,
-                               mosek_params = {'MSK_DPAR_INTPNT_CO_TOL_DFEAS':  opt_eps,
+                                mosek_params={
+                                                "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                                                "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                                                "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                                                "MSK_IPAR_NUM_THREADS": 4,
+                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
                                             },
                                verbose=True)
         if problem.status != cp.OPTIMAL:
@@ -177,7 +183,12 @@ def optimize_reweighted_atomic(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
     problem = cp.Problem(objective, constraints)
     for k in range(N):
         result = problem.solve(solver=cp.MOSEK,
-                               mosek_params = {'MSK_DPAR_INTPNT_CO_TOL_DFEAS':  opt_eps,
+                                mosek_params={
+                                                "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                                                "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                                                "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                                                "MSK_IPAR_NUM_THREADS": 4,
+                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
                                             },
                                verbose=True)
         if problem.status != cp.OPTIMAL:
@@ -374,7 +385,16 @@ def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, Poly
 
 
     for k in range(N):
-        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
+        result = problem.solve(solver=cp.MOSEK, 
+                                mosek_params={
+                                        "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                                        "MSK_IPAR_NUM_THREADS": 4,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                    },
+                                verbose=True
+                            )
         if problem.status != cp.OPTIMAL:
             raise Exception("Solver did not converge!")
         
@@ -446,7 +466,16 @@ def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, Poly_x, Poly_u, P
 
 
     for k in range(N):
-        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
+        result = problem.solve(solver=cp.MOSEK, 
+                                mosek_params={
+                                        "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                                        "MSK_IPAR_NUM_THREADS": 4,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                    },
+                                verbose=True
+                            )
         if problem.status != cp.OPTIMAL:
             raise Exception("Solver did not converge!")
         
@@ -609,7 +638,13 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
 
     result = problem.solve(
         solver=cp.MOSEK,
-        mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS': opt_eps},
+        mosek_params={
+                "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                "MSK_IPAR_NUM_THREADS": 4,
+                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+            },
         verbose=True
     )
     if problem.status != cp.OPTIMAL:
@@ -668,7 +703,16 @@ def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u,
         return W_new, W_new
 
     for k in range(N):
-        result = problem.solve(solver=cp.MOSEK, mosek_params={'MSK_DPAR_INTPNT_CO_TOL_DFEAS':opt_eps}, verbose=True)
+        result = problem.solve(solver=cp.MOSEK, 
+                                mosek_params={
+                                        "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+                                        "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+                                        "MSK_IPAR_NUM_THREADS": 4,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                    },
+                                verbose=True
+                            )
         if problem.status != cp.OPTIMAL:
             raise Exception("Solver did not converge!")
         
@@ -790,3 +834,63 @@ def partial_time_dist_poly(times_list, T, dist=5):
         h_time[row_start : row_start+4] = h_comm_1time
 
     return Polytope(H_time, h_time)
+
+
+
+
+
+
+def row_factorization(M, rank_eps=1e-7):
+    m, n = M.shape
+    rank_M = np.linalg.matrix_rank(M, tol=rank_eps)
+
+    E = np.zeros((0, n))
+    D = np.zeros((0, 0))
+
+    rank_counter = 0
+    rank_increase_rows = [None]*rank_M
+
+    for row in range(m):
+        submat_new = M[:row+1, :]
+        rank_new = np.linalg.matrix_rank(submat_new, tol=rank_eps)
+
+        if rank_new - rank_counter == 1:
+            rank_increase_rows[rank_counter] = row
+            rank_counter += 1
+
+            E = np.vstack([E, submat_new[row:row+1, :]]) 
+            if D.shape[1] < rank_counter:
+                D = np.hstack([D, np.zeros((D.shape[0], 1))])
+
+            unit = np.zeros((1, rank_counter))
+            unit[0, -1] = 1.0
+            D = np.vstack([D, unit])
+
+        elif rank_new == rank_counter:
+            c, _, _, _ = np.linalg.lstsq(E.T, M[row, :], rcond=None)
+            c = c.reshape(1, rank_counter)  # (1, rank_counter)
+
+            D = np.vstack([D, c])
+
+        else:
+            raise ValueError("Rank increased by more than 1 at row {}.".format(row))
+
+        # assert E.shape == (rank_counter, n), "E shape mismatch"
+        # assert D.shape == (row+1, rank_counter), "D shape mismatch"
+
+    assert E.shape == (rank_counter, n)
+    assert D.shape == (m, rank_counter)
+    assert rank_counter == rank_M
+
+    return D, E, rank_increase_rows
+
+def compute_message_time_from_E(E, eps=1e-7):
+    r, n = E.shape
+    times = []
+    for i in range(r):
+        row_i = E[i, :]
+        nonzero_cols = np.sum(np.abs(row_i) > eps)
+        time_i = (nonzero_cols / 2.0) - 1.0
+        times.append(time_i)
+    return times
+
