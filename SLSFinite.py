@@ -364,57 +364,130 @@ class SLSFinite():
                 big_mat_phixy[t*4 : (t+1)*4,  tau*2 : (tau+1)*2] = sub_4x2
         return big_mat_phiuy, big_mat_phiux, big_mat_phixy
 
-
-    def display_mesage_time(self, rank_eps=1e-7):
+    def display_message_row(self, rank_eps=1e-7, save_file="intermediate_results.npz"):
         L21 = self.extract_sub_communication_matrix(direction='21')
         L12 = self.extract_sub_communication_matrix(direction='12')
 
         print("Message time in L21:")
-        L21_D, L21_E, _ = row_factorization(L21, rank_eps)
-        L21_times = compute_message_time_from_E(L21_E)
-        print(f"  Times (based on E rows): {L21_times}\n")
+        L21_D, L21_E, L21_times = row_factorization_causal(L21, rank_eps)
+        print(f"  Times (based on rank increase): {L21_times}\n")
+
         print("Message time in L12:")
-        L12_D, L12_E, _ = row_factorization(L12, rank_eps)
-        L12_times = compute_message_time_from_E(L12_E)
-        print(f"  Times (based on E rows): {L12_times}\n")
-
-
-
+        L12_D, L12_E, L12_times = row_factorization_causal(L12, rank_eps)
+        print(f"  Times (based on rank increase): {L12_times}\n")
 
         L21_Phiuy, L21_Phiux, L21_Phixy = self.extract_Phi_subcom_mat(direction='21')
         L12_Phiuy, L12_Phiux, L12_Phixy = self.extract_Phi_subcom_mat(direction='12')
 
         print("Message time in L21_Phiuy:")
-        L21_PhiuyD, L21_PhiuyE, _ = row_factorization(L21_Phiuy, rank_eps)
-        L21_Phiuy_times = compute_message_time_from_E(L21_PhiuyE)
-        print(f"  Times (based on E rows): {L21_Phiuy_times}\n")
+        L21_PhiuyD, L21_PhiuyE, L21_Phiuy_times = row_factorization_causal(L21_Phiuy, rank_eps)
+        print(f"  Times (based on rank increase): {L21_Phiuy_times}\n")
 
         print("Message time in L21_Phiux:")
-        L21_PhiuxD, L21_PhiuxE, _ = row_factorization(L21_Phiux, rank_eps)
-        L21_Phiux_times = compute_message_time_from_E(L21_PhiuxE)
-        print(f"  Times (based on E rows): {L21_Phiux_times}\n")
+        L21_PhiuxD, L21_PhiuxE, L21_Phiux_times = row_factorization_causal(L21_Phiux, rank_eps)
+        print(f"  Times (based on rank increase): {L21_Phiux_times}\n")
 
         print("Message time in L21_Phixy:")
-        L21_PhixyD, L21_PhixyE, _ = row_factorization(L21_Phixy, rank_eps)
-        L21_Phixy_times = compute_message_time_from_E(L21_PhixyE)
-        print(f"  Times (based on E rows): {L21_Phixy_times}\n")
-
+        L21_PhixyD, L21_PhixyE, L21_Phixy_times = row_factorization_causal(L21_Phixy, rank_eps)
+        print(f"  Times (based on rank increase): {L21_Phixy_times}\n")
 
         print("Message time in L12_Phiuy:")
-        L12_PhiuyD, L12_PhiuyE, _ = row_factorization(L12_Phiuy, rank_eps)
-        L12_Phiuy_times = compute_message_time_from_E(L12_PhiuyE)
-        print(f"  Times (based on E rows): {L12_Phiuy_times}\n")
+        L12_PhiuyD, L12_PhiuyE, L12_Phiuy_times = row_factorization_causal(L12_Phiuy, rank_eps)
+        print(f"  Times (based on rank increase): {L12_Phiuy_times}\n")
 
         print("Message time in L12_Phiux:")
-        L12_PhiuxD, L12_PhiuxE, _ = row_factorization(L12_Phiux, rank_eps)
-        L12_Phiux_times = compute_message_time_from_E(L12_PhiuxE)
-        print(f"  Times (based on E rows): {L12_Phiux_times}\n")
+        L12_PhiuxD, L12_PhiuxE, L12_Phiux_times = row_factorization_causal(L12_Phiux, rank_eps)
+        print(f"  Times (based on rank increase): {L12_Phiux_times}\n")
 
         print("Message time in L12_Phixy:")
-        L12_PhixyD, L12_PhixyE, _ = row_factorization(L12_Phixy, rank_eps)
-        L12_Phixy_times = compute_message_time_from_E(L12_PhixyE)
-        print(f"  Times (based on E rows): {L12_Phixy_times}\n")
+        L12_PhixyD, L12_PhixyE, L12_Phixy_times = row_factorization_causal(L12_Phixy, rank_eps)
+        print(f"  Times (based on rank increase): {L12_Phixy_times}\n")
 
+        save_dict = {
+            "L21": L21, "L21_D": L21_D, "L21_E": L21_E, "L21_times": L21_times,
+            "L12": L12, "L12_D": L12_D, "L12_E": L12_E, "L12_times": L12_times,
+
+            "L21_Phiuy": L21_Phiuy, "L21_PhiuyD": L21_PhiuyD, "L21_PhiuyE": L21_PhiuyE, "L21_Phiuy_times": L21_Phiuy_times,
+            "L21_Phiux": L21_Phiux, "L21_PhiuxD": L21_PhiuxD, "L21_PhiuxE": L21_PhiuxE, "L21_Phiux_times": L21_Phiux_times,
+            "L21_Phixy": L21_Phixy, "L21_PhixyD": L21_PhixyD, "L21_PhixyE": L21_PhixyE, "L21_Phixy_times": L21_Phixy_times,
+
+            "L12_Phiuy": L12_Phiuy, "L12_PhiuyD": L12_PhiuyD, "L12_PhiuyE": L12_PhiuyE, "L12_Phiuy_times": L12_Phiuy_times,
+            "L12_Phiux": L12_Phiux, "L12_PhiuxD": L12_PhiuxD, "L12_PhiuxE": L12_PhiuxE, "L12_Phiux_times": L12_Phiux_times,
+            "L12_Phixy": L12_Phixy, "L12_PhixyD": L12_PhixyD, "L12_PhixyE": L12_PhixyE, "L12_Phixy_times": L12_Phixy_times
+        }
+
+        np.savez(save_file, **save_dict)
+
+        print(f"Saved to: {save_file}")
+        return
+
+
+    def display_message_time(self, rank_eps=1e-7, save_file="intermediate_results.npz"):
+        def adjust_time(times, scale):
+            return [t // scale for t in times]
+
+        L21 = self.extract_sub_communication_matrix(direction='21')
+        L12 = self.extract_sub_communication_matrix(direction='12')
+
+        print("Message time in L21:")
+        L21_D, L21_E, L21_times = row_factorization_causal(L21, rank_eps)
+        L21_times = adjust_time(L21_times, 2) 
+        print(f"  Adjusted Times: {L21_times}\n")
+
+        print("Message time in L12:")
+        L12_D, L12_E, L12_times = row_factorization_causal(L12, rank_eps)
+        L12_times = adjust_time(L12_times, 2)
+        print(f"  Adjusted Times: {L12_times}\n")
+
+        L21_Phiuy, L21_Phiux, L21_Phixy = self.extract_Phi_subcom_mat(direction='21')
+        L12_Phiuy, L12_Phiux, L12_Phixy = self.extract_Phi_subcom_mat(direction='12')
+
+        print("Message time in L21_Phiuy:")
+        L21_PhiuyD, L21_PhiuyE, L21_Phiuy_times = row_factorization_causal(L21_Phiuy, rank_eps)
+        L21_Phiuy_times = adjust_time(L21_Phiuy_times, 2)
+        print(f"  Adjusted Times: {L21_Phiuy_times}\n")
+
+        print("Message time in L21_Phiux:")
+        L21_PhiuxD, L21_PhiuxE, L21_Phiux_times = row_factorization_causal(L21_Phiux, rank_eps)
+        L21_Phiux_times = adjust_time(L21_Phiux_times, 2)
+        print(f"  Adjusted Times: {L21_Phiux_times}\n")
+
+        print("Message time in L21_Phixy:")
+        L21_PhixyD, L21_PhixyE, L21_Phixy_times = row_factorization_causal(L21_Phixy, rank_eps)
+        L21_Phixy_times = adjust_time(L21_Phixy_times, 4)
+        print(f"  Adjusted Times: {L21_Phixy_times}\n")
+
+        print("Message time in L12_Phiuy:")
+        L12_PhiuyD, L12_PhiuyE, L12_Phiuy_times = row_factorization_causal(L12_Phiuy, rank_eps)
+        L12_Phiuy_times = adjust_time(L12_Phiuy_times, 2)
+        print(f"  Adjusted Times: {L12_Phiuy_times}\n")
+
+        print("Message time in L12_Phiux:")
+        L12_PhiuxD, L12_PhiuxE, L12_Phiux_times = row_factorization_causal(L12_Phiux, rank_eps)
+        L12_Phiux_times = adjust_time(L12_Phiux_times, 2)
+        print(f"  Adjusted Times: {L12_Phiux_times}\n")
+
+        print("Message time in L12_Phixy:")
+        L12_PhixyD, L12_PhixyE, L12_Phixy_times = row_factorization_causal(L12_Phixy, rank_eps)
+        L12_Phixy_times = adjust_time(L12_Phixy_times, 4)
+        print(f"  Adjusted Times: {L12_Phixy_times}\n")
+
+        save_dict = {
+            "L21": L21, "L21_D": L21_D, "L21_E": L21_E, "L21_times": L21_times,
+            "L12": L12, "L12_D": L12_D, "L12_E": L12_E, "L12_times": L12_times,
+
+            "L21_Phiuy": L21_Phiuy, "L21_PhiuyD": L21_PhiuyD, "L21_PhiuyE": L21_PhiuyE, "L21_Phiuy_times": L21_Phiuy_times,
+            "L21_Phiux": L21_Phiux, "L21_PhiuxD": L21_PhiuxD, "L21_PhiuxE": L21_PhiuxE, "L21_Phiux_times": L21_Phiux_times,
+            "L21_Phixy": L21_Phixy, "L21_PhixyD": L21_PhixyD, "L21_PhixyE": L21_PhixyE, "L21_Phixy_times": L21_Phixy_times,
+
+            "L12_Phiuy": L12_Phiuy, "L12_PhiuyD": L12_PhiuyD, "L12_PhiuyE": L12_PhiuyE, "L12_Phiuy_times": L12_Phiuy_times,
+            "L12_Phiux": L12_Phiux, "L12_PhiuxD": L12_PhiuxD, "L12_PhiuxE": L12_PhiuxE, "L12_Phiux_times": L12_Phiux_times,
+            "L12_Phixy": L12_Phixy, "L12_PhixyD": L12_PhixyD, "L12_PhixyE": L12_PhixyE, "L12_Phixy_times": L12_Phixy_times
+        }
+
+        np.savez(save_file, **save_dict)
+
+        print(f"Saved to: {save_file}")
         return
 
         

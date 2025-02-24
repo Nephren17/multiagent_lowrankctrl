@@ -141,27 +141,281 @@ save = True
 
 
 --- Baseline Communication Messages ----------------------------------------------------
-Reweighted Nuclear Norm: 9.046596805006857e-12
-UAV2->UAV1 messages: 9
-UAV1->UAV2 messages: 9
+Reweighted Nuclear Norm: 2.2051455661475927e-09
+UAV2->UAV1 messages: 6
+UAV1->UAV2 messages: 8
+Message time in L21:
+  Times (based on E rows): [0, 3, 3, 4, 6, 8]
 
---- Offdiag Communication -----------------------------------------------------
-Com time: 143.1819064617157
-Error truncated polytope constraint (Offdiag): 2.2406446431588734e-07
+Message time in L12:
+  Times (based on E rows): [0, 3, 3, 3, 3, 7, 7, 8]
+
+Message time in L21_Phiuy:
+  Times (based on E rows): [0, 3, 3, 4, 6, 8]
+
+Message time in L21_Phiux:
+  Times (based on E rows): [0, 6, 6, 6, 6]
+
+Message time in L21_Phixy:
+  Times (based on E rows): [0, 3, 0, 4, 6, 8]
+
+Message time in L12_Phiuy:
+  Times (based on E rows): [0, 3, 3, 3, 3, 7, 7, 8]
+
+Message time in L12_Phiux:
+  Times (based on E rows): [0, 6, 6, 8, 12, 12, 16, 16]
+
+Message time in L12_Phixy:
+  Times (based on E rows): [0, 3, 3, 3, 3, 7, 3, 8]
+
+saved to: baseline_results.npz
+
+--- Offdiag Phi_uy Only -----------------------------------------------------
+Com time: 169.8944787979126
+Error truncated polytope constraint (Offdiag): 5.892772274584956e-07
 rank K (offdiag): 34
 band (D,E) = messages (offdiag): 34
-Reweighted Nuclear Norm: 6.575279731801942e-08
-UAV2->UAV1 messages (offdiag): 11
-UAV1->UAV2 messages (offdiag): 11
-messages from rank: 10 10
+Reweighted Nuclear Norm: 1.7554784295659154e-07
+UAV2->UAV1 messages (offdiag): 12
+UAV1->UAV2 messages (offdiag): 6
+messages from rank: 12 6
 Supposed Rank of L1 and L2:
-Rank(L1), Rank(L2) in Phi_uy: 6 6
+Rank(L1), Rank(L2) in Phi_uy: 3 2
 F, L21, L12 have been written to 'OffdiagMatrices.txt' for inspection.
+Message time in L21:
+  Times (based on E rows): [0, 1, 2, 4, 4, 4, 6, 6, 6, 8, 8, 8]
+
+Message time in L12:
+  Times (based on E rows): [0, 1, 2, 2, 6, 7]
+
+Message time in L21_Phiuy:
+  Times (based on E rows): [4, 6, 8]
+
+Message time in L21_Phiux:
+  Times (based on E rows): [0, 2, 4, 6, 8, 10, 12, 0, 14, 16, 18]
+
+Message time in L21_Phixy:
+  Times (based on E rows): [-1, 4, 4, 6, 6, 8]
+
+Message time in L12_Phiuy:
+  Times (based on E rows): [6, 7]
+
+Message time in L12_Phiux:
+  Times (based on E rows): [0, 2, 4, 6, 8, 10, 12, 12, 14, 16, 18]
+
+Message time in L12_Phixy:
+  Times (based on E rows): [-1, -1, -1, 6, 7, 7]
+
+saved to: SLS_offdiag_results.npz
 
 --- Offdiag Communication diagI ------------------------------------
-Com time diagI: 578.50181889534
-Reweighted Nuclear Norm: 8.746611557253203e-08
+Com time diagI: 646.6366617679596
+Reweighted Nuclear Norm: 4.9011270208954016e-08
 UAV2->UAV1 messages diagI: 6
-UAV1->UAV2 messages diagI: 6
+UAV1->UAV2 messages diagI: 3
 Supposed Rank of L1 and L2:
-Rank(L1), Rank(L2) in Phi_uy: 6 6
+Rank(L1), Rank(L2) in Phi_uy: 6 3
+Message time in L21:
+  Times (based on E rows): [3, 4, 5, 6, 7, 8]
+
+Message time in L12:
+  Times (based on E rows): [0, 6, 7]
+
+Message time in L21_Phiuy:
+  Times (based on E rows): [3, 4, 5, 6, 7, 8]
+
+Message time in L21_Phiux:
+  Times (based on E rows): []
+
+Message time in L21_Phixy:
+  Times (based on E rows): [3, 4, 5, 6, 7, 8]
+
+Message time in L12_Phiuy:
+  Times (based on E rows): [0, 6, 7]
+
+Message time in L12_Phiux:
+  Times (based on E rows): []
+
+Message time in L12_Phixy:
+  Times (based on E rows): [0, 6, 7]
+
+saved to: SLS_offdiag_diagI_results.npz
+
+--- Offdiag Communication diagI ------------------------------------
+Com time diagI: 1449.9535694122314
+Reweighted Nuclear Norm: 5.200129330612535e-08
+UAV2->UAV1 messages diagI: 3
+UAV1->UAV2 messages diagI: 2
+Supposed Rank of L1 and L2:
+Rank(L1), Rank(L2) in Phi_uy: 3 2
+Message time in L21:
+  Times (based on E rows): [4, 6, 8]
+
+Message time in L12:
+  Times (based on E rows): [7, 8]
+
+Message time in L21_Phiuy:
+  Times (based on E rows): [4, 6, 8]
+
+Message time in L21_Phiux:
+  Times (based on E rows): []
+
+Message time in L21_Phixy:
+  Times (based on E rows): [4, 6, 8]
+
+Message time in L12_Phiuy:
+
+Message time in L12_Phiux:
+  Times (based on E rows): []
+
+Message time in L12_Phixy:
+  Times (based on E rows): [7, 8]
+
+saved to: SLS_offdiag_three_Phi_results.npz
+PS D:\sparks\Study\Research\2025-control\lowRankControl-main>
+
+
+
+
+
+
+
+
+
+
+
+
+
+--- Baseline Communication Messages ----------------------------------------------------
+Reweighted Nuclear Norm: 2.2051455661475927e-09
+UAV2->UAV1 messages: 6
+UAV1->UAV2 messages: 8
+Message time in L21:
+  Adjusted Times: [0, 3, 4, 4, 6, 8]
+
+Message time in L12:
+  Adjusted Times: [0, 3, 3, 4, 5, 7, 7, 8]
+
+Message time in L21_Phiuy:
+  Adjusted Times: [0, 3, 4, 4, 6, 8]
+
+Message time in L21_Phiux:
+  Adjusted Times: [0, 3, 4, 5, 9]
+
+Message time in L21_Phixy:
+  Adjusted Times: [1, 4, 5, 5, 7, 9]
+
+Message time in L12_Phiuy:
+  Adjusted Times: [0, 3, 3, 4, 5, 7, 7, 8]
+
+Message time in L12_Phiux:
+  Adjusted Times: [0, 3, 3, 4, 6, 7, 8, 8]
+
+Message time in L12_Phixy:
+  Adjusted Times: [1, 4, 4, 5, 6, 8, 8, 9]
+
+Saved to: baseline_results.npz
+
+--- Optimize Offdiag Phi_uy Only -----------------------------------------------------
+Com time: 152.6310534477234
+Error truncated polytope constraint (Offdiag): 5.892772274584956e-07
+rank K (offdiag): 34
+band (D,E) = messages (offdiag): 34
+Reweighted Nuclear Norm: 1.7554784295659154e-07
+UAV2->UAV1 messages (offdiag): 12
+UAV1->UAV2 messages (offdiag): 6
+messages from rank: 12 6
+Supposed Rank of L1 and L2:
+Rank(L1), Rank(L2) in Phi_uy: 3 2
+F, L21, L12 have been written to 'OffdiagMatrices.txt' for inspection.
+Message time in L21:
+  Adjusted Times: [1, 2, 3, 4, 4, 5, 6, 6, 7, 8, 8, 9]
+
+Message time in L12:
+  Adjusted Times: [1, 2, 3, 4, 6, 7]
+
+Message time in L21_Phiuy:
+  Adjusted Times: [4, 6, 8]
+
+Message time in L21_Phiux:
+  Adjusted Times: [0, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9]
+
+Message time in L21_Phixy:
+  Adjusted Times: [3, 5, 6, 7, 8, 9]
+
+Message time in L12_Phiuy:
+  Adjusted Times: [6, 7]
+
+Message time in L12_Phiux:
+  Adjusted Times: [0, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9]
+
+Message time in L12_Phixy:
+  Adjusted Times: [3, 4, 5, 7, 8, 9]
+
+Saved to: SLS_offdiag_results.npz
+
+---Optimize Offdiag Communication with Phi_xx constraint ------------------------------------
+Com time diagI: 611.1578917503357
+Reweighted Nuclear Norm: 4.9011270208954016e-08
+UAV2->UAV1 messages diagI: 6
+UAV1->UAV2 messages diagI: 3
+Supposed Rank of L1 and L2:
+Rank(L1), Rank(L2) in Phi_uy: 6 3
+Message time in L21:
+  Adjusted Times: [3, 4, 5, 6, 7, 8]
+
+Message time in L12:
+  Adjusted Times: [0, 6, 7]
+
+Message time in L21_Phiuy:
+  Adjusted Times: [3, 4, 5, 6, 7, 8]
+
+Message time in L21_Phiux:
+  Adjusted Times: []
+
+Message time in L21_Phixy:
+  Adjusted Times: [4, 5, 6, 7, 8, 9]
+
+Message time in L12_Phiuy:
+  Adjusted Times: [0, 6, 7]
+
+Message time in L12_Phiux:
+  Adjusted Times: []
+
+Message time in L12_Phixy:
+  Adjusted Times: [1, 7, 8]
+
+Saved to: SLS_offdiag_diagI_results.npz
+
+---Optimize Offdiag Communication three Phi with xx constrained ------------------------------------
+Com time diagI: 1427.5746076107025
+Reweighted Nuclear Norm: 5.200129330612535e-08
+UAV2->UAV1 messages diagI: 3
+UAV1->UAV2 messages diagI: 2
+Supposed Rank of L1 and L2:
+Rank(L1), Rank(L2) in Phi_uy: 3 2
+Message time in L21:
+  Adjusted Times: [4, 6, 8]
+
+Message time in L12:
+  Adjusted Times: [7, 8]
+
+Message time in L21_Phiuy:
+  Adjusted Times: [4, 6, 8]
+
+Message time in L21_Phiux:
+  Adjusted Times: []
+
+Message time in L21_Phixy:
+  Adjusted Times: [5, 7, 9]
+
+Message time in L12_Phiuy:
+  Adjusted Times: [7, 8]
+
+Message time in L12_Phiux:
+  Adjusted Times: []
+
+Message time in L12_Phixy:
+  Adjusted Times: [8, 9]
+
+Saved to: SLS_offdiag_three_Phi_results.npz

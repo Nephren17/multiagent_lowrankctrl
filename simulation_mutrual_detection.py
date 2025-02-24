@@ -553,7 +553,7 @@ SLS_nuc.calculate_dependent_variables(key="Reweighted Nuclear Norm")
 msg_21, msg_12 = SLS_nuc.compute_communication_messages(rank_eps=1e-7)
 print("UAV2->UAV1 messages:", msg_21)
 print("UAV1->UAV2 messages:", msg_12)
-SLS_nuc.display_mesage_time()
+SLS_nuc.display_message_time(save_file="baseline_results.npz")
 
 
 
@@ -596,7 +596,7 @@ with open("OffdiagMatrices.txt","w") as f:
     f.write("=== L12 matrix (UAV1->UAV2) ===\n")
     f.write(str(L12) + "\n\n")
 print("F, L21, L12 have been written to 'OffdiagMatrices.txt' for inspection.")
-SLS_offdiag.display_mesage_time()
+SLS_offdiag.display_message_time(save_file="SLS_offdiag_results.npz")
 
 
 
@@ -614,7 +614,7 @@ print("UAV1->UAV2 messages diagI:", msg_12_diagI)
 rank_L1, rank_L2 = SLS_offdiag_diagI.compute_offdiag_rank_of_Phi()
 print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
-SLS_offdiag_diagI.display_mesage_time()
+SLS_offdiag_diagI.display_message_time(save_file="SLS_offdiag_diagI_results.npz")
 
 
 
@@ -632,7 +632,7 @@ print("UAV1->UAV2 messages diagI:", msg_12_diagI)
 rank_L1, rank_L2 = SLS_offdiag_three_Phi.compute_offdiag_rank_of_Phi()
 print("Supposed Rank of L1 and L2:")
 print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
-SLS_offdiag_three_Phi.display_mesage_time()
+SLS_offdiag_three_Phi.display_message_time(save_file="SLS_offdiag_three_Phi_results.npz")
 
 
 
@@ -653,7 +653,7 @@ if no_comm_data is not None:
     rank_L1, rank_L2 = SLS_no_comm.compute_offdiag_rank_of_Phi()
     print("Supposed Rank of L1 and L2:")
     print("Rank(L1), Rank(L2) in Phi_uy:", rank_L1, rank_L2)
-    SLS_no_comm.display_mesage_time()
+    SLS_no_comm.display_message_time(save_file="SLS_no_comm_results.npz")
 
 
 plt.show()
