@@ -59,6 +59,17 @@ In `Functions.py`
 
 
 
+In `simulation_four.py`,
+
+- This is a simulation designed for four uwv to chase each other.
+- It mainly used functions from functions_swarm.py
+
+
+
+
+
+
+
 ## Appendix
 
 The following additional scripts are used by `simulation.py` and `plots.py`.

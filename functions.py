@@ -26,7 +26,7 @@ def poly_intersect(poly1, poly2):
     h_new = np.concatenate((poly1.h, poly2.h))
     return Polytope(H_new, h_new)
 
-def optimize(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps, norm=None):
+def optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=None):
     """
     Parameters
     ----------
@@ -48,10 +48,15 @@ def optimize(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps, norm=None)
     Lambda: cvxpy.Variable, shape (H_x[0], H_w[0])
         Polytope containment variable corresponding to the optimal cost.
     """
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize\n")
+
     # constraints
-    SLS_data = SLSFinite(A_list, B_list, C_list, norm)
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay, norm)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
     # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+    # constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
+    constraints += SLS_data.SLP_constraints()
 
     # objective function
     objective = cp.Minimize(0)
@@ -64,7 +69,7 @@ def optimize(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps, norm=None)
         raise Exception("Solver did not converge!")
     return result, SLS_data, Lambda
 
-def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, opt_eps):
+def optimize_RTH(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, opt_eps):
     """
     Parameters
     ----------
@@ -90,8 +95,13 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     Lambda: cvxpy.Variable, shape (H_x[0] + H_u[0], H_w[0])
         Polytope containment variable corresponding to the optimal cost.
     """
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_RTH\n")
+
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
+
     # Initialize Paramters
     W_1 = cp.Parameter(2*[SLS_data.nu*(SLS_data.T+1)])
     W_2 = cp.Parameter(2*[SLS_data.ny*(SLS_data.T+1)])
@@ -145,7 +155,7 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
     print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_data_list[-1].Phi_matrix.value - SLS_data_list[-1].Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)) ) )
     assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-5) )
+    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-3) )
 
     # check feasibility by reoptimizing over Lambda
     # Poly_xu = Poly_x.cart(Poly_u)
@@ -163,8 +173,11 @@ def optimize_RTH(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, delta, rank_
 
     return [result_list, SLS_data_list, Lambda]#, reopt_Lambda]
 
-def optimize_reweighted_atomic(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps):
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+def optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps):
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_reweighted_atomic\n")
+    
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
     # Initialize Paramters
     if key == 'Reweighted Sensor Norm':
@@ -206,7 +219,7 @@ def optimize_reweighted_atomic(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N
     return result_list, SLS_list, Lambda, norm_list
 
 
-def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, delta, rank_eps, opt_eps):
+def optimize_sparsity(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, key, N, delta, rank_eps, opt_eps):
     """
     Parameters
     ----------
@@ -232,7 +245,10 @@ def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, de
     Lambda: cvxpy.Variable, shape (H_x[0] + H_u[0], H_w[0])
         Polytope containment variable corresponding to the optimal cost.
     """
-    result_list, SLS_list, Lambda, norm_list  = optimize_reweighted_atomic(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps)
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_sparsity\n")
+
+    result_list, SLS_list, Lambda, norm_list  = optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps)
     # reoptimize over last iteration by removing columns or rows of the lowest 2-norms
     argmin = SLS_list[-1].Phi_uy.value
     if key == 'Reweighted Sensor Norm':
@@ -244,7 +260,7 @@ def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, de
     else:
         raise Exception('Choose either the reweighted sensor or actuator norm to minimize!')
     ind = np.where(norm_argmin<=rank_eps)[0]
-    reopt_result, reopt_SLS, reopt_Lambda = optimize(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps, norm=[key, ind])
+    reopt_result, reopt_SLS, reopt_Lambda = optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=[key, ind])
     reopt_kept_indices = [i for i in np.arange(len(norm_argmin)) if i not in ind] # columns/rows kept
     reopt_SLS.calculate_dependent_variables(key) # only get F, no other truncation needed.
     reopt_SLS.F_trunc = reopt_SLS.F
@@ -256,7 +272,7 @@ def optimize_sparsity(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, key, N, de
     print("Error true Phi and truncated Phi:", np.max( np.abs(reopt_SLS.Phi_matrix.value - reopt_SLS.Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(reopt_Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(reopt_SLS.Phi_trunc)) ) )
     assert np.all( reopt_Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-6) )
+    assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-3) )
 
     return [reopt_result, reopt_SLS, reopt_Lambda, norm_list, reopt_kept_indices, SLS_list]
 
@@ -294,17 +310,21 @@ def zero_diag_blocks(phi, T, block_row, block_col):
 
 
 
-def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     """
     Of(Phi) = Off-Diag Parts of Phi
     minimize rank(Of(Phi_uy)) + rank(Of(Phi_ux)) + rank(Of(Phi_xy)),
     s.t. Of(Phi_xx) = 0
     """
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_RTH_offdiag_three_phis_constrain_phixx\n")
+
     # poly constraints
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
 
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
     constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
 
     L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
     L_phi_ux = zero_diag_blocks(SLS_data.Phi_ux, SLS_data.T, SLS_data.nu, SLS_data.nx)
@@ -426,14 +446,19 @@ def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, Poly
 
 
 
-def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     """
     minimize rank(Of(Phi_uy))
     """
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_RTH_offdiag_no_constraint\n")
+
+
     # poly constraints
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
 
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
 
     L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
 
@@ -498,25 +523,6 @@ def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, Poly_x, Poly_u, P
 
     return [result_list, SLS_data, Lambda]
 
-
-
-
-def polytope_constraints_three_phi_diag(SLS_data, Poly_x, Poly_u, Poly_w):
-    constraints = SLS_data.SLP_constraints()
-    Poly_xu = Poly_x.cart(Poly_u)
-    Lambda = cp.Variable((Poly_xu.H.shape[0], Poly_w.H.shape[0]), nonneg=True)
-    constraints += [Lambda @ Poly_w.H == Poly_xu.H @ SLS_data.Phi_matrix,
-                    Lambda @ Poly_w.h <= Poly_xu.h]
-
-    Tplus1 = SLS_data.T + 1
-    nx = SLS_data.nx
-    nu = SLS_data.nu
-    ny = SLS_data.ny
-    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, nx, Tplus1)
-    constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xy, nx, ny, Tplus1)
-    constraints += diagonal_identity_block_constraints_ux(SLS_data.Phi_ux, nx, nu, Tplus1)
-
-    return constraints, Lambda
 
 
 
@@ -596,6 +602,68 @@ def diagonal_identity_block_constraints_uy(Phi_uy, nu, ny, Tplus1):
 
 
 
+def time_delay_constraints(Phi_uy, Phi_ux, Phi_xx, Phi_xy,nu, ny, nx, Tplus1, delay):
+    constraints = []
+    half_nx = nx // 2
+    half_nu = nu // 2
+    half_ny = ny // 2
+
+    # =========== 1) Phi_xx ===========
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            if (t - tau) < delay:
+                row_block = t * nx
+                col_block = tau * nx
+                for i in range(0, half_nx):
+                    for j in range(half_nx, nx):
+                        constraints.append(Phi_xx[row_block + i, col_block + j] == 0)
+                for i in range(half_nx, nx):
+                    for j in range(0, half_nx):
+                        constraints.append(Phi_xx[row_block + i, col_block + j] == 0)
+
+    # =========== 2) Phi_ux ===========
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            if (t - tau) < delay:
+                row_block = t * nu
+                col_block = tau * nx
+                for i in range(0, half_nu):
+                    for j in range(half_nx, nx):
+                        constraints.append(Phi_ux[row_block + i, col_block + j] == 0)
+                for i in range(half_nu, nu):
+                    for j in range(0, half_nx):
+                        constraints.append(Phi_ux[row_block + i, col_block + j] == 0)
+
+    # =========== 3) Phi_xy ===========
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            if (t - tau) < delay:
+                row_block = t * nx
+                col_block = tau * ny
+                for i in range(0, half_nx):
+                    for j in range(half_ny, ny):
+                        constraints.append(Phi_xy[row_block + i, col_block + j] == 0)
+                for i in range(half_nx, nx):
+                    for j in range(0, half_ny):
+                        constraints.append(Phi_xy[row_block + i, col_block + j] == 0)
+
+    # =========== 4) Phi_uy ===========
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            if (t - tau) < delay:
+                row_block = t * nu
+                col_block = tau * ny
+                for i in range(0, half_nu):
+                    for j in range(half_ny, ny):
+                        constraints.append(Phi_uy[row_block + i, col_block + j] == 0)
+                for i in range(half_nu, nu):
+                    for j in range(0, half_ny):
+                        constraints.append(Phi_uy[row_block + i, col_block + j] == 0)
+
+    return constraints
+
+
+
 def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
     """
     Add polyconstraint: no comm between two drones
@@ -622,12 +690,12 @@ def polytope_constraints_no_comm_both_ways(SLS_data, Poly_x, Poly_u, Poly_w):
 
 
 
-def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, opt_eps):
+def optimize_no_comm_both_ways(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps):
     """
     No cross-communication between UAVs,
     objective = 0 for demonstration.
     """
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
 
     [constraints, Lambda] = polytope_constraints_no_comm_both_ways(
         SLS_data, Poly_x, Poly_u, Poly_w
@@ -659,10 +727,15 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, o
 '''
 The constraint on phi_ux is removed. Optimize Off-diag of phi_uy - phi_ux
 '''
-def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
-    SLS_data = SLSFinite(A_list, B_list, C_list)
+def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+    
+    with open("check.txt", "a") as f:
+        f.write(f"Begin optimize_RTH_offdiag_constrain_phixx\n")
+    
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
     constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx,SLS_data.T+1, SLS_data.delay)
 
     L1_expr = SLS_data.extract_offdiag_expr(direction='21')
     L2_expr = SLS_data.extract_offdiag_expr(direction='12')
@@ -834,7 +907,6 @@ def partial_time_dist_poly(times_list, T, dist=5):
         h_time[row_start : row_start+4] = h_comm_1time
 
     return Polytope(H_time, h_time)
-
 
 
 

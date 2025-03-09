@@ -56,7 +56,7 @@ def col_sparse_low_block_tri_variable(n, m, Tp1, rem_col):
     return var.T
 
 class SLSFinite():
-    def __init__(self, A_list, B_list, C_list, norm=None):
+    def __init__(self, A_list, B_list, C_list, delay, norm=None):
         """
         Store the variables used for convex optimization in finite time system level synthesis framework.
     
@@ -76,8 +76,13 @@ class SLSFinite():
         """
         # init variables
         assert len(A_list) == len(B_list) == len(C_list)
+        # init basic contents
+        self.A_list = A_list
+        self.B_list = B_list
+        self.C_list = C_list
         # define dimanesions
         self.T = len(A_list) - 1
+        self.delay = delay
         self.nx = A_list[0].shape[0]
         self.nu = B_list[0].shape[1]
         self.ny = C_list[0].shape[0]
