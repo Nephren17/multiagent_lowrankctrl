@@ -1,4 +1,4 @@
-# A Low Rank Approach to Minimize Output Feedback Multi-Agent System
+# A Low Rank Approach to Minimize Output Feedback Multi-Agent System with Delay under System Level Synthesis Framework
 
 ## Setup
 
@@ -10,19 +10,21 @@ pip install -r requirements.txt
 
 ## Run
 
-To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Demonstrations", run the following command:
+To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Demonstrations", run the following commands.
 
 ```bash
-python3 simulation.py
+python3 simulation_two.py
 ```
 
-The figures and the file `simulationT20.pickle` containing the simulation data is saved in `simulation_results`.
-
-To run the code only reproducing the figures using the previously saved simulation data in `simulation_results/simulationT20.pickle`, run the following command:
+This is a task where two under water vehicles (uwv)  
 
 ```bash
-python3 plots.py
+python3 simulation_four.py
 ```
+
+The two commands above will respectively run the simulation task for two under water vehicles (UWV) and four uwvs. In the tasks,  UWVs need to plan their trajectory with delay and safe constraints.
+
+The figures and the file `simulationT10_joint.pickle` containing the simulation data is saved in `simulation_results`.
 
 
 
@@ -34,7 +36,7 @@ python3 plots.py
 
 
 
-In `simulation_mutraul_detection.py`,
+In `simulation_two.py`,
 
 - `offdiag_phiuy_only_data` is the optimization data with only `rank off-diag(phi_uy)` is optimized without other constraints.
 
@@ -56,13 +58,15 @@ In `SLSFinite.py`,
 In `Functions.py`
 
 - `diagonal_identity_block_constraints_xx` and other diagonal constraints are constraints that kills off-diag part of phi matrix.
+- `zero_diag_blocks` is used to extract the elements in `Phi` that represent communication.
+- `time_delay_constraints` is used to add time delay constraints to `Phi`, and final controller K will also hold that delay pattern.
 
 
 
 In `simulation_four.py`,
 
 - This is a simulation designed for four uwv to chase each other.
-- It mainly used functions from functions_swarm.py
+- It mainly used functions from functions`functions_swarm.py`
 
 
 
