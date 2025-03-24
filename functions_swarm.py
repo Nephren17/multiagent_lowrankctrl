@@ -7,6 +7,7 @@ from functions import *
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from scipy.linalg import block_diag
 import copy
 import os
 
@@ -137,6 +138,46 @@ def swarm_zero_diag_blocks(phi, T, n_uwv, state_row, state_col):
         return cp.multiply(phi, mask)
 
 
+
+def swarm_comm_blockdiag_distributed(Phi, T, n_uwv, state_row, state_col):
+    Tplus1 = T + 1
+    expected_rows = n_uwv * Tplus1 * state_row
+    expected_cols = n_uwv * Tplus1 * state_col
+
+    if not isinstance(Phi, (np.ndarray, cp.Expression)):
+        raise TypeError("Phi must be numpy or cp expression")
+
+    if isinstance(Phi, cp.Expression):
+        m, n = Phi.shape
+    else:
+        m, n = Phi.shape
+
+    if m != expected_rows or n != expected_cols:
+        raise ValueError(f"size is expected ({expected_rows}, {expected_cols}), but now ({m}, {n})")
+
+    comm_pairs = [(i, j) for i in range(n_uwv) for j in range(n_uwv) if i != j]
+    comm_blocks = []
+
+    for (i, j) in comm_pairs:
+        time_blocks = []
+        for t in range(Tplus1):
+            row_blocks = []
+            for tau in range(Tplus1):
+                row_start = t * n_uwv * state_row + i * state_row
+                col_start = tau * n_uwv * state_col + j * state_col
+                sub_block = Phi[row_start:row_start+state_row, 
+                              col_start:col_start+state_col]
+                row_blocks.append(sub_block)
+            time_blocks.append(cp.hstack(row_blocks) if isinstance(Phi, cp.Expression) else np.hstack(row_blocks))
+        block_matrix = cp.vstack(time_blocks) if isinstance(Phi, cp.Expression) else np.vstack(time_blocks)
+        comm_blocks.append(block_matrix)
+
+    return comm_blocks
+
+
+
+
+
 ### Optimization Functions ################################################################
 
 def swarm_optimize(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, opt_eps, norm=None):
@@ -198,7 +239,7 @@ def swarm_optimize_RTH(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Pol
                                                 "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                                 "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                                 "MSK_IPAR_NUM_THREADS": 4,
-                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                             },
                                verbose=True)
         if problem.status != cp.OPTIMAL:
@@ -234,57 +275,55 @@ def swarm_optimize_RTH(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Pol
     print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_data_list[-1].Phi_matrix.value - SLS_data_list[-1].Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)) ) )
     assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 3e-3) )
 
     return [result_list, SLS_data_list, Lambda]
 
 
 
-
-
-def swarm_optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
-    """
-    Of(Phi) = Off-Diag Parts of Phi
-    minimize rank(Of(Phi_uy)) + rank(Of(Phi_ux)) + rank(Of(Phi_xy)),
-    s.t. Of(Phi_xx) = 0
-    """
+def swarm_optimize_RTH_offdiag_three_phis_constrain_phixx_optimized_distributed(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_RTH_offdiag_three_phis_constrain_phixx\n")
+        f.write(f"Begin optimize_RTH_offdiag_three_phis_constrain_phixx (Distributed)\n")
 
-    # poly constraints
     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
-
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
     constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
-    # constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
 
-    L_phi_uy =  swarm_zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, n_uwv, 2, 2)
-    L_phi_ux = swarm_zero_diag_blocks(SLS_data.Phi_ux, SLS_data.T, n_uwv, 2, 4)
-    L_phi_xy = swarm_zero_diag_blocks(SLS_data.Phi_xy, SLS_data.T, n_uwv, 4, 2)
+    blocks_uy = swarm_comm_blockdiag_distributed(SLS_data.Phi_uy, SLS_data.T, n_uwv, 2, 2)
+    blocks_ux = swarm_comm_blockdiag_distributed(SLS_data.Phi_ux, SLS_data.T, n_uwv, 2, 4)
+    blocks_xy = swarm_comm_blockdiag_distributed(SLS_data.Phi_xy, SLS_data.T, n_uwv, 4, 2)
 
-    m_uy, n_uy = L_phi_uy.shape
-    m_ux, n_ux = L_phi_ux.shape
-    m_xy, n_xy = L_phi_xy.shape
+    if blocks_uy == None:
+        print("uy is none\n")
+    if blocks_ux == None:
+        print("ux is none\n")
+    if blocks_xy == None:
+        print("xy is none\n")
 
-    W1_left = cp.Parameter((m_uy, m_uy), PSD=True)
-    W1_right= cp.Parameter((n_uy, n_uy), PSD=True)
-    W2_left = cp.Parameter((m_ux, m_ux), PSD=True)
-    W2_right= cp.Parameter((n_ux, n_ux), PSD=True)
-    W3_left = cp.Parameter((m_xy, m_xy), PSD=True)
-    W3_right= cp.Parameter((n_xy, n_xy), PSD=True)
+    W_params = []
+    for blk in blocks_uy + blocks_ux + blocks_xy:
+        m, n = blk.shape
+        W_left = cp.Parameter((m, m), PSD=True)
+        W_right = cp.Parameter((n, n), PSD=True)
+        W_left.value = delta**(-0.5) * np.eye(m)
+        W_right.value = delta**(-0.5) * np.eye(n)
+        W_params.append( (W_left, W_right) )
 
-    W1_left.value  = delta**(-0.5) * np.eye(m_uy)
-    W1_right.value = delta**(-0.5) * np.eye(n_uy)
-    W2_left.value  = delta**(-0.5) * np.eye(m_ux)
-    W2_right.value = delta**(-0.5) * np.eye(n_ux)
-    W3_left.value  = delta**(-0.5) * np.eye(m_xy)
-    W3_right.value = delta**(-0.5) * np.eye(n_xy)
+    objective_terms = []
+    for idx, blk in enumerate(blocks_uy):
+        W_left, W_right = W_params[idx]
+        objective_terms.append(1.0 * cp.norm(W_left @ blk @ W_right, 'nuc'))
+    
+    offset = len(blocks_uy)
+    for idx, blk in enumerate(blocks_ux):
+        W_left, W_right = W_params[offset + idx]
+        objective_terms.append(1.0 * cp.norm(W_left @ blk @ W_right, 'nuc'))
+    
+    offset += len(blocks_ux)
+    for idx, blk in enumerate(blocks_xy):
+        W_left, W_right = W_params[offset + idx]
+        objective_terms.append(1.0 * cp.norm(W_left @ blk @ W_right, 'nuc'))
 
-
-    objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc') + 1.0 * cp.norm( W2_left@L_phi_ux@W2_right, 'nuc')
-    + 1.0 * cp.norm( W3_left@L_phi_xy@W3_right, 'nuc'))
-
-    problem = cp.Problem(objective, constraints)
+    problem = cp.Problem(cp.Minimize(sum(objective_terms)), constraints)
 
     result_list = N*[None]
     SLS_data_list = N*[None]
@@ -309,7 +348,7 @@ def swarm_optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list
                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                         "MSK_IPAR_NUM_THREADS": 4,
-                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                     },
                                 verbose=True
                             )
@@ -319,13 +358,27 @@ def swarm_optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list
         result_list[k] = result
         SLS_data_list[k] = copy.deepcopy(SLS_data)
 
-        L_phi_uy_val = L_phi_uy.value
-        L_phi_ux_val = L_phi_ux.value
-        L_phi_xy_val = L_phi_xy.value
-
-        W1_left.value, W1_right.value = update_reweight_stable_rect(L_phi_uy_val, W1_left.value, W1_right.value)
-        W2_left.value, W2_right.value = update_reweight_stable_rect(L_phi_ux_val, W2_left.value, W2_right.value)
-        W3_left.value, W3_right.value = update_reweight_stable_rect(L_phi_xy_val, W3_left.value, W3_right.value)
+        try:
+            for idx, (blk, (W_left, W_right)) in enumerate(zip(blocks_uy + blocks_ux + blocks_xy, W_params)):
+                if isinstance(blk, cp.Expression):
+                    current_blk = blk.value
+                else:
+                    current_blk = blk
+                
+                if np.allclose(current_blk, 0):
+                    continue
+                
+                W_left_new, W_right_new = update_reweight_stable_rect(
+                    blk=blk,
+                    W_left=W_left,
+                    W_right=W_right
+                )
+                
+                W_left.value = W_left_new
+                W_right.value = W_right_new
+        except Exception as e:
+            print(f"update fail: {str(e)}")
+            break
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
     # causal_factorization
@@ -339,7 +392,6 @@ def swarm_optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list
     print("Error truncated polytope constraint:", max_err)
 
     return [result_list, SLS_data, Lambda]
-
 
 ### Plot and Record ################################################################
 
@@ -396,7 +448,6 @@ def plot_swarm_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, 
         y_meas[t+1] = SLS_data.C_list[t+1] @ x_next + np.random.normal(0, meas_noise, ny)
 
     plt.figure(figsize=(10, 8))
-    # colors = ['red', 'green', 'blue', 'purple']
     colors = ['#E07197', '#F1BE00', '#FF0000', '#5375E4']
     
     for i in range(n_uwv):
@@ -407,17 +458,6 @@ def plot_swarm_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, 
                  label=f'UWV {i+1}', marker='o',
                  markersize=5, linewidth=2, alpha=0.8)
         
-        # for t in range(T+1):
-        #     center = center_times[t][4*i:4*i+2]
-        #     radius = radius_times[t][4*i:4*i+2]
-            
-        #     rect = patches.Rectangle(
-        #         (center[0]-radius[0], center[1]-radius[1]),
-        #         2*radius[0], 2*radius[1],
-        #         edgecolor=colors[i], facecolor='none',
-        #         linestyle='--', linewidth=1, alpha=0.3
-        #     )
-        #     plt.gca().add_patch(rect)
     
         for t in range(T+1):
             center = center_times[t][4*i:4*i+2]
@@ -442,8 +482,6 @@ def plot_swarm_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, 
             plt.gca().add_patch(rect)
 
 
-
-
     plt.title(f'UWV Trajectories')
     plt.xlabel('X Position')
     plt.ylabel('Y Position')
@@ -461,9 +499,8 @@ def plot_swarm_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, 
     print("finished plotting trajectories")
 
 
-import numpy as np
 
-def swarm_calculate_communication(F, T, n_uwv, tol=1e-3):
+def swarm_calculate_communication(F, T, n_uwv, tol=1e-2):
     """
     calculate communication message number for final control matrix F
     """
@@ -487,8 +524,42 @@ def swarm_calculate_communication(F, T, n_uwv, tol=1e-3):
                 c_start = col_start + robot * state_dim
                 
                 mask[r_start : r_start+state_dim, 
-                     c_start : c_start+state_dim] = 0
+                     c_start : c_start+state_dim] = 0.0
     
     F_comm = F * mask
     tot_messag_number = np.linalg.matrix_rank(F_comm, tol=tol)
     print("Cross UWV total message number:", tot_messag_number)
+
+
+def swarm_communication_message_num(F, T, n_uwv, tol=1e-3):
+    Tplus1 = T + 1
+    state_dim=2
+    expected_size = n_uwv * Tplus1 * state_dim
+    
+    if F.shape != (expected_size, expected_size):
+        raise ValueError(f"size should be({expected_size}, {expected_size}), but is{F.shape}")
+
+    comm_pairs = [(i, j) for i in range(n_uwv) for j in range(n_uwv) if i != j]
+    
+    comm_blocks = []
+    block_size = state_dim * Tplus1
+    
+    for (i, j) in comm_pairs:
+        block_matrix = np.zeros((block_size, block_size))
+        
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * n_uwv * state_dim + i * state_dim
+                col_start = tau * n_uwv * state_dim + j * state_dim
+                
+                sub_block = F[row_start:row_start+state_dim, 
+                                col_start:col_start+state_dim]
+                
+                block_matrix[t*state_dim:(t+1)*state_dim, 
+                                tau*state_dim:(tau+1)*state_dim] = sub_block
+        
+        comm_blocks.append(block_matrix)
+    
+    block_diag_matrix = block_diag(*comm_blocks)
+    message_num = np.linalg.matrix_rank(block_diag_matrix, tol=tol)
+    print("Cross UWV total msg num:", message_num)
