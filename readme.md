@@ -1,4 +1,4 @@
-# A Low Rank Approach to Minimize Output Feedback Multi-Agent System
+# Safe Control of Multi-Agent Systems with Minimal Communication
 
 ## Setup
 
