@@ -5,7 +5,11 @@ from Polytope import *
 from utils import *
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.lines import Line2D
 import copy
+import os
+
 
 
 #### basic operations #######################################################################################
@@ -141,6 +145,25 @@ def diagonal_identity_block_constraints_uy(Phi_uy, nu, ny, Tplus1):
 
 
 
+def quad_lower_triangular_block_constraints_xx(Phi_xx, nx, Tplus1):
+    constraints = []
+    half_nx = nx // 2
+    
+    for t in range(Tplus1):
+        for tau in range(Tplus1):
+            if t < tau:
+                continue
+                
+            row_start = t * nx
+            col_start = tau * nx
+            
+            for i_sub in range(half_nx):
+                for j_sub in range(half_nx):
+                    row = row_start + i_sub
+                    col = col_start + half_nx + j_sub
+                    constraints.append(Phi_xx[row, col] == 0.0)
+    return constraints
+
 def time_delay_constraints(Phi_uy, Phi_ux, Phi_xx, Phi_xy,nu, ny, nx, Tplus1, delay):
     constraints = []
     half_nx = nx // 2
@@ -263,35 +286,11 @@ def partial_time_dist_poly(times_list, T, dist=5):
 #### optimization functions #######################################################################################
 
 def optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=None):
-    """
-    Parameters
-    ----------
-    A_list: list of matrices [A_0, ...A_T]
-    B_list: list of tensors [B_0, ...B_T]
-    C_list: list of tensors [C_0, ...C_T]
-        where A_t, B_t, C_t are the matrices in the dynamics of the system at time t.
-    Poly_x, Poly_u, Poly_w: Polytope
-        Polytopes cartesian products of polytopes
-        for x, u and w over all times t = 0,...,T.
-
-    Returns
-    -------
-    result: float
-        Optimal cost (np.inf if problem is not feasible).
-    SLS_data: SLSFinite object
-        Instance of the class SLSFinite containing the variables corresponding
-        to the optimal cost.
-    Lambda: cvxpy.Variable, shape (H_x[0], H_w[0])
-        Polytope containment variable corresponding to the optimal cost.
-    """
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize\n")
 
     # constraints
     SLS_data = SLSFinite(A_list, B_list, C_list, delay, norm)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
-    # constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
-    # constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
     constraints += SLS_data.SLP_constraints()
 
     # objective function
@@ -301,44 +300,42 @@ def optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, nor
                             mosek_params = {'MSK_DPAR_INTPNT_CO_TOL_DFEAS':  opt_eps,
                                             },
                             verbose=True)
-    SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
-    # causal_factorization
-    SLS_data.causal_factorization(1e-7)
-    SLS_data.F_trunc_to_Phi_trunc()
 
     if problem.status != cp.OPTIMAL:
         raise Exception("Solver did not converge!")
-    return result, SLS_data, Lambda
+
+
+
+def optimize_decentral_feasibility(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=None):
+
+    # constraints
+    SLS_data = SLSFinite(A_list, B_list, C_list, delay, norm)
+    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
+    constraints += SLS_data.SLP_constraints()
+
+    # This is the constraints that don't allow inter-agent communication, corresponding to the decentral case
+    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+    constraints += diagonal_identity_block_constraints_xy(SLS_data.Phi_xx, SLS_data.nx, SLS_data.ny, SLS_data.T + 1)
+    constraints += diagonal_identity_block_constraints_ux(SLS_data.Phi_xx, SLS_data.nx, SLS_data.nu, SLS_data.T + 1)
+    constraints += diagonal_identity_block_constraints_uy(SLS_data.Phi_xx, SLS_data.nu, SLS_data.ny, SLS_data.T + 1)
+
+    # objective function
+    objective = cp.Minimize(0)
+    problem = cp.Problem(objective, constraints)
+    result = problem.solve( solver=cp.MOSEK,
+                            mosek_params = {'MSK_DPAR_INTPNT_CO_TOL_DFEAS':  opt_eps,
+                                            },
+                            verbose=True)
+
+    if problem.status != cp.OPTIMAL:
+        raise Exception("Solver did not converge! Not feasiblt for no communication!")
 
 
 def optimize_RTH(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, opt_eps):
     """
-    Parameters
-    ----------
-    A_list: list of matrices [A_0, ...A_T]
-    B_list: list of tensors [B_0, ...B_T]
-    C_list: list of tensors [C_0, ...C_T]
-        where A_t, B_t, C_t are the matrices in the dynamics of the system at time t.
-    Poly_x, Poly_u, Poly_w: Polytope
-        Polytopes cartesian products of polytopes
-        for x, u and w over all times t = 0,...,T.
-    N: int
-        Number of iterations of the reweighted nuclear norm iteration.
-    key: str
-        Set the cost function.
-
-    Returns
-    -------
-    result_list: float
-        Optimal cost (np.inf if problem is not feasible).
-    SLS_data_list: SLSFinite object
-        List of Instance of the class SLSFinite containing the variables corresponding
-        to the optimal cost.
-    Lambda: cvxpy.Variable, shape (H_x[0] + H_u[0], H_w[0])
-        Polytope containment variable corresponding to the optimal cost.
+    Baseline controller
     """
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_RTH\n")
 
     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
@@ -361,7 +358,7 @@ def optimize_RTH(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, delta
                                                 "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                                 "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                                 "MSK_IPAR_NUM_THREADS": 4,
-                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                             },
                                verbose=True)
         if problem.status != cp.OPTIMAL:
@@ -382,14 +379,10 @@ def optimize_RTH(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, delta
         W_1.value = update_W(Y, SLS_data.nu*(SLS_data.T+1), delta)
         W_2.value = update_W(Z, SLS_data.ny*(SLS_data.T+1), delta)
         
-    # calculate F
     SLS_data_list[-1].calculate_dependent_variables("Reweighted Nuclear Norm")
-    # compute causal factorization of F and truncate using rank_eps
     SLS_data_list[-1].causal_factorization(rank_eps)
-    # compute truncated Phi matrix for checking feasibility
     SLS_data_list[-1].F_trunc_to_Phi_trunc()
 
-    # check feasibility up to 1e-6
     Poly_xu = Poly_x.cart(Poly_u)
     print("rank F:", SLS_data_list[-1].rank_F_trunc)
     print("band (D,E) = messages:", SLS_data_list[-1].E.shape[0])
@@ -397,126 +390,119 @@ def optimize_RTH(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, delta
     print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_data_list[-1].Phi_matrix.value - SLS_data_list[-1].Phi_trunc) ) )
     print("Error truncated polytope constraint:", np.max( np.abs(Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)) ) )
     assert np.all( Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(SLS_data_list[-1].Phi_trunc)).astype('float') , atol = 1e-3) )
 
     return [result_list, SLS_data_list, Lambda]#, reopt_Lambda]
 
-def optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps):
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_reweighted_atomic\n")
+# def optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps):
+#     with open("check.txt", "a") as f:
+#         f.write(f"Begin optimize_reweighted_atomic\n")
     
-    SLS_data = SLSFinite(A_list, B_list, C_list, delay)
-    [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
-    # Initialize Paramters
-    if key == 'Reweighted Sensor Norm':
-        W = cp.Parameter(SLS_data.ny*(SLS_data.T+1))
-        objective = cp.Minimize(cp.sum(cp.norm(SLS_data.Phi_uy @ cp.diag(W), 2, 0)))
-        W.value = delta**-1 * np.ones(SLS_data.ny*(SLS_data.T+1))
-    elif key == 'Reweighted Actuator Norm':
-        W = cp.Parameter(SLS_data.nu*(SLS_data.T+1))
-        objective = cp.Minimize(cp.sum(cp.norm(cp.diag(W) @ SLS_data.Phi_uy, 2, 1)))
-        W.value = delta**-1 * np.ones(SLS_data.nu*(SLS_data.T+1))
+#     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
+#     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+#     if key == 'Reweighted Sensor Norm':
+#         W = cp.Parameter(SLS_data.ny*(SLS_data.T+1))
+#         objective = cp.Minimize(cp.sum(cp.norm(SLS_data.Phi_uy @ cp.diag(W), 2, 0)))
+#         W.value = delta**-1 * np.ones(SLS_data.ny*(SLS_data.T+1))
+#     elif key == 'Reweighted Actuator Norm':
+#         W = cp.Parameter(SLS_data.nu*(SLS_data.T+1))
+#         objective = cp.Minimize(cp.sum(cp.norm(cp.diag(W) @ SLS_data.Phi_uy, 2, 1)))
+#         W.value = delta**-1 * np.ones(SLS_data.nu*(SLS_data.T+1))
     
-    result_list = N*[None]
-    SLS_list = N*[None]
-    norm_list = N*[None]
-    #define problem
-    problem = cp.Problem(objective, constraints)
-    for k in range(N):
-        result = problem.solve(solver=cp.MOSEK,
-                                mosek_params={
-                                                "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
-                                                "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
-                                                "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
-                                                "MSK_IPAR_NUM_THREADS": 4,
-                                                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
-                                            },
-                               verbose=True)
-        if problem.status != cp.OPTIMAL:
-            raise Exception("Solver did not converge!")
-        result_list[k] = result
-        SLS_list[k] = copy.deepcopy(SLS_data)
+#     result_list = N*[None]
+#     SLS_list = N*[None]
+#     norm_list = N*[None]
+#     problem = cp.Problem(objective, constraints)
+#     for k in range(N):
+#         result = problem.solve(solver=cp.MOSEK,
+#                                 mosek_params={
+#                                                 "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+#                                                 "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+#                                                 "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+#                                                 "MSK_IPAR_NUM_THREADS": 4,
+#                                                 "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
+#                                             },
+#                                verbose=True)
+#         if problem.status != cp.OPTIMAL:
+#             raise Exception("Solver did not converge!")
+#         result_list[k] = result
+#         SLS_list[k] = copy.deepcopy(SLS_data)
         
-        #update params
-        if key == 'Reweighted Sensor Norm':
-            norm_list[k] = np.linalg.norm(SLS_data.Phi_uy.value, 2, 0)
-            W.value = (np.linalg.norm(SLS_data.Phi_uy.value, 2, 0) + delta)**-1
-        if key == 'Reweighted Actuator Norm':
-            norm_list[k] = np.linalg.norm(SLS_data.Phi_uy.value, 2, 1)
-            W.value = (np.linalg.norm(SLS_data.Phi_uy.value, 2, 1) + delta)**-1
-    return result_list, SLS_list, Lambda, norm_list
+#         if key == 'Reweighted Sensor Norm':
+#             norm_list[k] = np.linalg.norm(SLS_data.Phi_uy.value, 2, 0)
+#             W.value = (np.linalg.norm(SLS_data.Phi_uy.value, 2, 0) + delta)**-1
+#         if key == 'Reweighted Actuator Norm':
+#             norm_list[k] = np.linalg.norm(SLS_data.Phi_uy.value, 2, 1)
+#             W.value = (np.linalg.norm(SLS_data.Phi_uy.value, 2, 1) + delta)**-1
+#     return result_list, SLS_list, Lambda, norm_list
 
 
-def optimize_sparsity(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, key, N, delta, rank_eps, opt_eps):
-    """
-    Parameters
-    ----------
-    A_list: list of matrices [A_0, ...A_T]
-    B_list: list of tensors [B_0, ...B_T]
-    C_list: list of tensors [C_0, ...C_T]
-        where A_t, B_t, C_t are the matrices in the dynamics of the system at time t.
-    Poly_x, Poly_u, Poly_w: Polytope
-        Polytopes cartesian products of polytopes
-        for x, u and w over all times t = 0,...,T.
-    N: int
-        Number of iterations of the reweighted nuclear norm iteration.
-    key: str
-        Set the cost function.
+# def optimize_sparsity(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, key, N, delta, rank_eps, opt_eps):
+#     """
+#     Parameters
+#     ----------
+#     A_list: list of matrices [A_0, ...A_T]
+#     B_list: list of tensors [B_0, ...B_T]
+#     C_list: list of tensors [C_0, ...C_T]
+#         where A_t, B_t, C_t are the matrices in the dynamics of the system at time t.
+#     Poly_x, Poly_u, Poly_w: Polytope
+#         Polytopes cartesian products of polytopes
+#         for x, u and w over all times t = 0,...,T.
+#     N: int
+#         Number of iterations of the reweighted nuclear norm iteration.
+#     key: str
+#         Set the cost function.
 
-    Returns
-    -------
-    result_list: float
-        Optimal cost (np.inf if problem is not feasible).
-    SLS_data_list: SLSFinite object
-        List of Instance of the class SLSFinite containing the variables corresponding
-        to the optimal cost.
-    Lambda: cvxpy.Variable, shape (H_x[0] + H_u[0], H_w[0])
-        Polytope containment variable corresponding to the optimal cost.
-    """
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_sparsity\n")
+#     Returns
+#     -------
+#     result_list: float
+#         Optimal cost (np.inf if problem is not feasible).
+#     SLS_data_list: SLSFinite object
+#         List of Instance of the class SLSFinite containing the variables corresponding
+#         to the optimal cost.
+#     Lambda: cvxpy.Variable, shape (H_x[0] + H_u[0], H_w[0])
+#         Polytope containment variable corresponding to the optimal cost.
+#     """
+#     with open("check.txt", "a") as f:
+#         f.write(f"Begin optimize_sparsity\n")
 
-    result_list, SLS_list, Lambda, norm_list  = optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps)
-    # reoptimize over last iteration by removing columns or rows of the lowest 2-norms
-    argmin = SLS_list[-1].Phi_uy.value
-    if key == 'Reweighted Sensor Norm':
-        # 2-norms of column vectors = sensor norm
-        norm_argmin = np.linalg.norm(argmin, 2, 0)
-    elif key == 'Reweighted Actuator Norm':
-        # 2-norms of row vectors = actuator norm
-        norm_argmin = np.linalg.norm(argmin, 2, 1)
-    else:
-        raise Exception('Choose either the reweighted sensor or actuator norm to minimize!')
-    ind = np.where(norm_argmin<=rank_eps)[0]
-    reopt_result, reopt_SLS, reopt_Lambda = optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=[key, ind])
-    reopt_kept_indices = [i for i in np.arange(len(norm_argmin)) if i not in ind] # columns/rows kept
-    reopt_SLS.calculate_dependent_variables(key) # only get F, no other truncation needed.
-    reopt_SLS.F_trunc = reopt_SLS.F
-    reopt_SLS.F_trunc_to_Phi_trunc()
+#     result_list, SLS_list, Lambda, norm_list  = optimize_reweighted_atomic(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N, key, delta, opt_eps)
+#     # reoptimize over last iteration by removing columns or rows of the lowest 2-norms
+#     argmin = SLS_list[-1].Phi_uy.value
+#     if key == 'Reweighted Sensor Norm':
+#         # 2-norms of column vectors = sensor norm
+#         norm_argmin = np.linalg.norm(argmin, 2, 0)
+#     elif key == 'Reweighted Actuator Norm':
+#         # 2-norms of row vectors = actuator norm
+#         norm_argmin = np.linalg.norm(argmin, 2, 1)
+#     else:
+#         raise Exception('Choose either the reweighted sensor or actuator norm to minimize!')
+#     ind = np.where(norm_argmin<=rank_eps)[0]
+#     reopt_result, reopt_SLS, reopt_Lambda = optimize(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps, norm=[key, ind])
+#     reopt_kept_indices = [i for i in np.arange(len(norm_argmin)) if i not in ind] # columns/rows kept
+#     reopt_SLS.calculate_dependent_variables(key) # only get F, no other truncation needed.
+#     reopt_SLS.F_trunc = reopt_SLS.F
+#     reopt_SLS.F_trunc_to_Phi_trunc()
 
-    # check feasibility after truncating lower triangularity
-    Poly_xu = Poly_x.cart(Poly_u)
-    print("Error true F and truncated F:", np.max( np.abs(reopt_SLS.F - reopt_SLS.F_trunc) ) )
-    print("Error true Phi and truncated Phi:", np.max( np.abs(reopt_SLS.Phi_matrix.value - reopt_SLS.Phi_trunc) ) )
-    print("Error truncated polytope constraint:", np.max( np.abs(reopt_Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(reopt_SLS.Phi_trunc)) ) )
-    assert np.all( reopt_Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
-    assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-3) )
+#     # check feasibility after truncating lower triangularity
+#     Poly_xu = Poly_x.cart(Poly_u)
+#     print("Error true F and truncated F:", np.max( np.abs(reopt_SLS.F - reopt_SLS.F_trunc) ) )
+#     print("Error true Phi and truncated Phi:", np.max( np.abs(reopt_SLS.Phi_matrix.value - reopt_SLS.Phi_trunc) ) )
+#     print("Error truncated polytope constraint:", np.max( np.abs(reopt_Lambda.value.dot(Poly_w.H) - Poly_xu.H.dot(reopt_SLS.Phi_trunc)) ) )
+#     assert np.all( reopt_Lambda.value.dot(Poly_w.h) <= Poly_xu.h + 1e-6 )
+#     assert np.all( np.isclose( reopt_Lambda.value.dot(Poly_w.H), (Poly_xu.H.dot(reopt_SLS.Phi_trunc)).astype('float') , atol = 1e-3) )
 
-    return [reopt_result, reopt_SLS, reopt_Lambda, norm_list, reopt_kept_indices, SLS_list]
-
-
+#     return [reopt_result, reopt_SLS, reopt_Lambda, norm_list, reopt_kept_indices, SLS_list]
 
 
-def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+
+
+def optimize_RTH_proposed(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     """
     Of(Phi) = Off-Diag Parts of Phi
     minimize rank(Of(Phi_uy)) + rank(Of(Phi_ux)) + rank(Of(Phi_xy)),
     s.t. Of(Phi_xx) = 0
     """
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_RTH_offdiag_three_phis_constrain_phixx\n")
 
-    # poly constraints
     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
 
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
@@ -576,7 +562,7 @@ def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, dela
                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                         "MSK_IPAR_NUM_THREADS": 4,
-                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                     },
                                 verbose=True
                             )
@@ -595,12 +581,10 @@ def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, dela
         W3_left.value, W3_right.value = update_reweight_stable_rect(L_phi_xy_val, W3_left.value, W3_right.value)
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
-    # causal_factorization
     SLS_data.causal_factorization(rank_eps)
     SLS_data.F_trunc_to_Phi_trunc()
 
     Poly_xu = Poly_x.cart(Poly_u)
-    # example check => truncated constraint
     diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
     max_err = np.max( np.abs(diff) )
     print("Error truncated polytope constraint:", max_err)
@@ -611,32 +595,49 @@ def optimize_RTH_offdiag_three_phis_constrain_phixx(A_list, B_list, C_list, dela
 
 
 
-def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+
+def optimize_RTH_proposed_lower_triangular(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     """
-    minimize rank(Of(Phi_uy))
+    Of(Phi) = Off-Diag Parts of Phi
+    minimize rank(Of(Phi_uy)) + rank(Of(Phi_ux)) + rank(Of(Phi_xy)),
+    s.t. Of(Phi_xx) = 0
     """
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_RTH_offdiag_no_constraint\n")
 
 
-    # poly constraints
     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
 
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+    constraints += quad_lower_triangular_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
     constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
 
     L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
+    L_phi_ux = zero_diag_blocks(SLS_data.Phi_ux, SLS_data.T, SLS_data.nu, SLS_data.nx)
+    L_phi_xy = zero_diag_blocks(SLS_data.Phi_xy, SLS_data.T, SLS_data.nx, SLS_data.ny)
+
 
     m_uy, n_uy = L_phi_uy.shape
+    m_ux, n_ux = L_phi_ux.shape
+    m_xy, n_xy = L_phi_xy.shape
 
     W1_left = cp.Parameter((m_uy, m_uy), PSD=True)
     W1_right= cp.Parameter((n_uy, n_uy), PSD=True)
-
+    W2_left = cp.Parameter((m_ux, m_ux), PSD=True)
+    W2_right= cp.Parameter((n_ux, n_ux), PSD=True)
+    W3_left = cp.Parameter((m_xy, m_xy), PSD=True)
+    W3_right= cp.Parameter((n_xy, n_xy), PSD=True)
 
     W1_left.value  = delta**(-0.5) * np.eye(m_uy)
     W1_right.value = delta**(-0.5) * np.eye(n_uy)
+    W2_left.value  = delta**(-0.5) * np.eye(m_ux)
+    W2_right.value = delta**(-0.5) * np.eye(n_ux)
+    W3_left.value  = delta**(-0.5) * np.eye(m_xy)
+    W3_right.value = delta**(-0.5) * np.eye(n_xy)
 
-    objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc'))
+
+    # objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+    objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc') + 1.0 * cp.norm( W2_left@L_phi_ux@W2_right, 'nuc')
+    + 1.0 * cp.norm( W3_left@L_phi_xy@W3_right, 'nuc'))
+
     problem = cp.Problem(objective, constraints)
 
     result_list = []
@@ -662,7 +663,7 @@ def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Po
                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                         "MSK_IPAR_NUM_THREADS": 4,
-                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                     },
                                 verbose=True
                             )
@@ -673,15 +674,18 @@ def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Po
         SLS_data_list.append(copy.deepcopy(SLS_data))
 
         L_phi_uy_val = L_phi_uy.value
+        L_phi_ux_val = L_phi_ux.value
+        L_phi_xy_val = L_phi_xy.value
+
         W1_left.value, W1_right.value = update_reweight_stable_rect(L_phi_uy_val, W1_left.value, W1_right.value)
+        W2_left.value, W2_right.value = update_reweight_stable_rect(L_phi_ux_val, W2_left.value, W2_right.value)
+        W3_left.value, W3_right.value = update_reweight_stable_rect(L_phi_xy_val, W3_left.value, W3_right.value)
 
     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
-    # causal_factorization
     SLS_data.causal_factorization(rank_eps)
     SLS_data.F_trunc_to_Phi_trunc()
 
     Poly_xu = Poly_x.cart(Poly_u)
-    # example check => truncated constraint
     diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
     max_err = np.max( np.abs(diff) )
     print("Error truncated polytope constraint:", max_err)
@@ -690,7 +694,84 @@ def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Po
 
 
 
-def optimize_no_comm_both_ways(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps):
+
+
+
+# def optimize_RTH_offdiag_no_constraint(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+#     """
+#     minimize rank(Of(Phi_uy))
+#     """
+#     with open("check.txt", "a") as f:
+#         f.write(f"Begin optimize_RTH_offdiag_no_constraint\n")
+
+#     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
+
+#     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+#     constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx, SLS_data.T+1, SLS_data.delay)
+#     L_phi_uy = zero_diag_blocks(SLS_data.Phi_uy, SLS_data.T, SLS_data.nu, SLS_data.ny)
+
+#     m_uy, n_uy = L_phi_uy.shape
+
+#     W1_left = cp.Parameter((m_uy, m_uy), PSD=True)
+#     W1_right= cp.Parameter((n_uy, n_uy), PSD=True)
+
+
+#     W1_left.value  = delta**(-0.5) * np.eye(m_uy)
+#     W1_right.value = delta**(-0.5) * np.eye(n_uy)
+
+#     objective = cp.Minimize(1.0 * cp.norm( W1_left@L_phi_uy@W1_right, 'nuc'))
+#     problem = cp.Problem(objective, constraints)
+
+#     result_list = []
+#     SLS_data_list = []
+
+#     def update_reweight_stable_rect(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+#         U, s, Vt = np.linalg.svd(L_val, full_matrices=False)
+#         s = np.maximum(s, epsilon)
+#         inv_sqrt_s = 1.0 / np.sqrt(s)
+
+#         Lambda_U = np.diag(inv_sqrt_s)
+#         Lambda_V = np.diag(inv_sqrt_s)
+
+#         Wleft_new = U @ Lambda_U @ U.T
+#         Wright_new= Vt.T @ Lambda_V @ Vt
+#         return Wleft_new, Wright_new
+
+
+#     for k in range(N):
+#         result = problem.solve(solver=cp.MOSEK, 
+#                                 mosek_params={
+#                                         "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+#                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+#                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+#                                         "MSK_IPAR_NUM_THREADS": 4,
+#                                         "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
+#                                     },
+#                                 verbose=True
+#                             )
+#         if problem.status != cp.OPTIMAL:
+#             raise Exception("Solver did not converge!")
+        
+#         result_list.append(result)
+#         SLS_data_list.append(copy.deepcopy(SLS_data))
+
+#         L_phi_uy_val = L_phi_uy.value
+#         W1_left.value, W1_right.value = update_reweight_stable_rect(L_phi_uy_val, W1_left.value, W1_right.value)
+
+#     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
+#     SLS_data.causal_factorization(rank_eps)
+#     SLS_data.F_trunc_to_Phi_trunc()
+
+#     Poly_xu = Poly_x.cart(Poly_u)
+#     diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
+#     max_err = np.max( np.abs(diff) )
+#     print("Error truncated polytope constraint:", max_err)
+
+#     return [result_list, SLS_data, Lambda]
+
+
+
+def optimize_decentral(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, opt_eps):
     """
     No cross-communication between UAVs,
     objective = 0 for demonstration.
@@ -711,7 +792,7 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, delay, Poly_x, Poly_u, Po
                 "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                 "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                 "MSK_IPAR_NUM_THREADS": 4,
-                "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
             },
         verbose=True
     )
@@ -723,18 +804,102 @@ def optimize_no_comm_both_ways(A_list, B_list, C_list, delay, Poly_x, Poly_u, Po
 
 
 
-# Optimize without constraint on phi_ux
-'''
-The constraint on phi_ux is removed. Optimize Off-diag of phi_uy - phi_ux
-'''
-def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+
+# def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
     
-    with open("check.txt", "a") as f:
-        f.write(f"Begin optimize_RTH_offdiag_constrain_phixx\n")
+#     with open("check.txt", "a") as f:
+#         f.write(f"Begin optimize_RTH_offdiag_constrain_phixx\n")
+    
+#     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
+#     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
+#     constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+#     constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx,SLS_data.T+1, SLS_data.delay)
+
+#     L1_expr = SLS_data.extract_offdiag_expr(direction='21')
+#     L2_expr = SLS_data.extract_offdiag_expr(direction='12')
+#     dim = 2*(SLS_data.T+1)
+#     W1_left = cp.Parameter((dim, dim), PSD=True)
+#     W1_right= cp.Parameter((dim, dim), PSD=True)
+#     W2_left = cp.Parameter((dim, dim), PSD=True)
+#     W2_right= cp.Parameter((dim, dim), PSD=True)
+
+#     W1_left.value  = delta**(-0.5) * np.eye(dim)
+#     W1_right.value = delta**(-0.5) * np.eye(dim)
+#     W2_left.value  = delta**(-0.5) * np.eye(dim)
+#     W2_right.value = delta**(-0.5) * np.eye(dim)
+
+#     objective = cp.Minimize(cp.norm( W1_left@L1_expr@W1_right, 'nuc') + cp.norm( W2_left@L2_expr@W2_right, 'nuc'))
+#     problem = cp.Problem(objective, constraints)
+
+#     result_list = []
+#     SLS_data_list = []
+
+#     def update_reweight_stable(L_val, Wleft_val, Wright_val, delta=1e-2, epsilon=1e-5):
+#         left_inv  = np.linalg.inv(Wleft_val + epsilon * np.eye(Wleft_val.shape[0]))
+#         right_inv = np.linalg.inv(Wright_val + epsilon * np.eye(Wright_val.shape[0]))
+#         Y = left_inv @ L_val @ right_inv
+#         Y = (Y + Y.T) / 2
+#         eigvals, eigvecs = np.linalg.eigh(Y)
+#         print(f"Eigenvalues min: {np.min(eigvals)}, max: {np.max(eigvals)}")
+
+#         min_eig = np.min(eigvals)
+#         if min_eig < -epsilon:
+#             shift = abs(min_eig) + delta
+#             print(f"Negative eigenvalue found ({min_eig:.6f}), shifting by {shift:.6f}")
+#             Y = Y + shift * np.eye(Y.shape[0])
+#             eigvals, eigvecs = np.linalg.eigh(Y)
+
+#         eigvals = np.maximum(eigvals, epsilon)
+#         W_new = eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
+#         return W_new, W_new
+
+#     for k in range(N):
+#         result = problem.solve(solver=cp.MOSEK, 
+#                                 mosek_params={
+#                                         "MSK_DPAR_INTPNT_TOL_PFEAS": 1e-5,
+#                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
+#                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
+#                                         "MSK_IPAR_NUM_THREADS": 4,
+#                                         "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
+#                                     },
+#                                 verbose=True
+#                             )
+#         if problem.status != cp.OPTIMAL:
+#             raise Exception("Solver did not converge!")
+        
+#         result_list.append(result)
+#         SLS_data_list.append(copy.deepcopy(SLS_data))
+
+#         L1_val = L1_expr.value
+#         L2_val = L2_expr.value
+#         W1_left.value, W1_right.value = update_reweight_stable(L1_val, W1_left.value, W1_right.value)
+#         W2_left.value, W2_right.value = update_reweight_stable(L2_val, W2_left.value, W2_right.value)
+
+
+#     SLS_data.calculate_dependent_variables("Reweighted Nuclear Norm")
+#     SLS_data.causal_factorization(rank_eps)
+#     SLS_data.F_trunc_to_Phi_trunc()
+
+#     Poly_xu = Poly_x.cart(Poly_u)
+#     diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
+#     max_err = np.max( np.abs(diff) )
+#     print("Error truncated polytope constraint:", max_err)
+#     return [result_list, SLS_data, Lambda]
+
+
+
+
+def optimize_RTH_offdiag_constrain_phixx_low_triangle(A_list, B_list, C_list, delay, Poly_x, Poly_u, Poly_w, N=10, delta=0.01, rank_eps=1e-7, opt_eps=1e-11):
+    '''
+    In this case, not all communication in Phi_xx is forbiddened. We only allow the communication from one specific agent to the other one.
+    '''
     
     SLS_data = SLSFinite(A_list, B_list, C_list, delay)
     [constraints, Lambda] = polytope_constraints(SLS_data, Poly_x, Poly_u, Poly_w)
-    constraints += diagonal_identity_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx, SLS_data.T + 1)
+
+    # Constrain is switched from making Phi_xx from block diagnal to block lower triangular
+    constraints += quad_lower_triangular_block_constraints_xx(SLS_data.Phi_xx, SLS_data.nx,  SLS_data.T + 1)
+
     constraints += time_delay_constraints(SLS_data.Phi_uy, SLS_data.Phi_ux, SLS_data.Phi_xx, SLS_data.Phi_xy, SLS_data.nu, SLS_data.ny, SLS_data.nx,SLS_data.T+1, SLS_data.delay)
 
     L1_expr = SLS_data.extract_offdiag_expr(direction='21')
@@ -767,7 +932,7 @@ def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, 
         min_eig = np.min(eigvals)
         if min_eig < -epsilon:
             shift = abs(min_eig) + delta
-            print(f"⚠️ WARNING: Negative eigenvalue found ({min_eig:.6f}), shifting by {shift:.6f}")
+            print(f"Negative eigenvalue found ({min_eig:.6f}), shifting by {shift:.6f}")
             Y = Y + shift * np.eye(Y.shape[0])
             eigvals, eigvecs = np.linalg.eigh(Y)
 
@@ -782,7 +947,7 @@ def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, 
                                         "MSK_DPAR_INTPNT_TOL_DFEAS": 1e-5,
                                         "MSK_DPAR_INTPNT_TOL_REL_GAP": 1e-5,
                                         "MSK_IPAR_NUM_THREADS": 4,
-                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 600,
+                                        "MSK_DPAR_OPTIMIZER_MAX_TIME": 60000,
                                     },
                                 verbose=True
                             )
@@ -804,7 +969,6 @@ def optimize_RTH_offdiag_constrain_phixx(A_list, B_list, C_list, delay, Poly_x, 
     SLS_data.F_trunc_to_Phi_trunc()
 
     Poly_xu = Poly_x.cart(Poly_u)
-    # example check => truncated constraint
     diff = Lambda.value@Poly_w.H - Poly_xu.H@SLS_data.Phi_trunc
     max_err = np.max( np.abs(diff) )
     print("Error truncated polytope constraint:", max_err)
@@ -882,15 +1046,21 @@ def plot_matrices_sparcity(SLS_data, save_path=None):
     plt.show()
 
 
+
+
+
 def plot_two_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, T, save_path,
                         process_noise=0.05, meas_noise=0.05, dt=1.0, seed=23):
-
-    # Setting the number of trajectories in the plot 
+    np.random.seed(seed)
+    
     num_traj = 4
-
     nx = SLS_data.nx
     nu = SLS_data.nu
     ny = SLS_data.ny
+
+    colors_traj = ['#FF0000', '#5375E4']
+    box_color = ['#E07197','#F1BE00','#989898']
+    marker_size = 6
 
     all_trajectories = []
     for sample in range(num_traj):
@@ -920,14 +1090,24 @@ def plot_two_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, T,
         
         all_trajectories.append(actual_traj)
 
-    plt.figure(figsize=(10, 8))
-    colors = ['#FF0000', '#5375E4']
-    
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
     for sample_idx, actual_traj in enumerate(all_trajectories):
         for i in range(2):
             x = actual_traj[:, 4*i]
             y = actual_traj[:, 4*i+1]
-            plt.plot(x, y, color=colors[i], linewidth=1, alpha=0.6, label=f'UAV {i+1}' if sample_idx == 0 else "")
+
+            ax.plot(x, y, color=colors_traj[i], linewidth=2.5, alpha=0.9)
+
+            for t_marker in [0, 5, 10]:
+                if t_marker <= T:
+                    ax.plot(x[t_marker], y[t_marker], marker='o', markersize=12,
+                            color=colors_traj[i], markeredgecolor='white', markeredgewidth=2.3, alpha=0.9)
+
+
 
     box_time_points = [0, 5, 10]
     for t in box_time_points:
@@ -936,24 +1116,209 @@ def plot_two_trajectory(SLS_data, Poly_x, Poly_w, center_times, radius_times, T,
         for i in range(2):
             center = center_times[t][4*i:4*i+2]
             radius = radius_times[t][4*i:4*i+2]
-            rect = matplotlib.patches.Rectangle(
+            if t == 0:
+                linestyle = '--'
+            elif t == 5:
+                linestyle = '-.'
+            else:
+                linestyle = '-'
+            alpha_val = 0.9
+
+            rect = patches.Rectangle(
                 (center[0]-radius[0], center[1]-radius[1]),
                 2*radius[0], 2*radius[1],
-                edgecolor=colors[i], facecolor='none',
-                linestyle='-', linewidth=1.5, alpha=0.5
+                edgecolor=box_color[int(t/5)], facecolor='none',
+                linestyle='-', linewidth=3.3, alpha=alpha_val
             )
-            plt.gca().add_patch(rect)
+            ax.add_patch(rect)
 
-    plt.title('UAV Trajectories with Dynamic Boxes')
-    plt.xlabel('X Position')
-    plt.ylabel('Y Position')
-    plt.legend(loc='upper right')
-    plt.grid(True, alpha=0.3)
-    plt.axis('equal')
-    
+    ax.set_xlabel('X Position', fontsize=22)
+    ax.set_ylabel('Y Position', fontsize=22)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.2, linewidth=2.0)
+
+    legend_elements = [
+        Line2D([0], [0], color=box_color[0], linestyle='-', lw=2.5, label='Start Box'),
+        Line2D([0], [0], color=box_color[1], linestyle='-', lw=2.5, label='Mid Box'),
+        Line2D([0], [0], color=box_color[2], linestyle='-', lw=2.5, label='End Box'),
+        Line2D([0], [0], color=colors_traj[0], lw=3, label='Vehicle 1'),
+        Line2D([0], [0], color=colors_traj[1], lw=3, label='Vehicle 2'),
+    ]
+
+
+    legend = fig.legend(
+        handles=legend_elements,
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.05),
+        ncol=2,
+        frameon=True,
+        edgecolor='black',
+        fancybox=False,
+        title_fontsize=18,
+        fontsize=16
+    )
+    legend.get_frame().set_linewidth(2.0)
+    legend.get_frame().set_edgecolor('black')
+
+    plt.subplots_adjust(bottom=0.15)
+
     if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         plt.close()
     else:
         plt.show()
+
     print("Finished plotting trajectories")
+
+
+
+
+def plot_two_noisy(SLS_data, Poly_x, Poly_w, center_times, radius_times, T, save_path,
+                    process_noise_scales=[0.25, 0.60, 0.05, 0.05, 0.05, 0.10, 0.05, 0.05],
+                    meas_noise_scales=[0.05, 0.05, 0.05, 0.05], dt=1.0, seed=27):
+
+
+    np.random.seed(seed)
+
+    nx = SLS_data.nx
+    nu = SLS_data.nu
+    ny = SLS_data.ny
+
+    num_traj = 2
+    colors_traj = ['#FF0000', '#5375E4']
+    box_color = ['#E07197', '#989898']
+    marker_size = 6
+
+    all_trajectories = []
+
+    for sample in range(num_traj):
+        x0 = np.zeros(nx)
+        for i in [0, 1]:
+            for j in range(4):
+                center = center_times[0][4 * i + j]
+                radius = radius_times[0][4 * i + j]
+                x0[4 * i + j] = np.random.uniform(center - radius, center + radius)
+
+        actual_traj = np.zeros((T+1, nx))
+        y_meas = np.zeros((T+1, ny))
+        actual_traj[0] = x0.copy()
+
+        y_meas[0] = SLS_data.C_list[0] @ x0 + [
+            np.random.uniform(-meas_noise_scales[0], meas_noise_scales[0]),
+            np.random.uniform(- meas_noise_scales[1], meas_noise_scales[1]),
+            np.random.uniform(-meas_noise_scales[2], meas_noise_scales[2]),
+            np.random.uniform(-meas_noise_scales[3], meas_noise_scales[3])
+        ]
+
+        for t in range(T):
+            F_block = SLS_data.F[t*nu:(t+1)*nu, :(t+1)*ny]
+            u = F_block @ y_meas[:t+1].flatten()
+
+            w = np.array([
+               np.random.uniform(-process_noise_scales[i], process_noise_scales[i])
+                for i in range(nx)
+            ])
+
+            x_next = SLS_data.A_list[t] @ actual_traj[t] + SLS_data.B_list[t] @ u + w
+            actual_traj[t+1] = x_next
+
+            y_meas[t+1] = SLS_data.C_list[t+1] @ x_next + [
+                np.random.uniform(-meas_noise_scales[i], meas_noise_scales[i]) for i in range(ny)
+            ]
+
+        all_trajectories.append(actual_traj)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
+    for sample_idx, actual_traj in enumerate(all_trajectories):
+        for uav_id in [0, 1]:
+            offset = 4 * uav_id
+            x = actual_traj[:, offset]
+            y = actual_traj[:, offset+1]
+
+            ax.plot(x, y, color=colors_traj[uav_id], linewidth=2.5, alpha=0.8)
+
+            for t_marker in [0, 3, 7, 10]:
+                if t_marker <= T:
+                    ax.plot(x[t_marker], y[t_marker], marker='o', markersize=12,
+                            color=colors_traj[uav_id], markeredgecolor='white',
+                            markeredgewidth=2.3, alpha=0.9)
+            for t_marker in [3, 7]:
+                if t_marker <= T:
+                    x1 = actual_traj[t_marker, 0]
+                    y1 = actual_traj[t_marker, 1]
+                    x2 = actual_traj[t_marker, 4]
+                    y2 = actual_traj[t_marker, 5]
+
+                    ax.plot([x1, x2], [y1, y2],
+                            linestyle='--', linewidth=3.3,
+                            color='#F1BE00',
+                            alpha=0.9, zorder=10)
+
+    box_time_points = [0, 10]
+    for t in box_time_points:
+        if t >= len(center_times):
+            continue
+        for i in [0,1]:
+            center = center_times[t][4*i:4*i+2]
+            radius = radius_times[t][4*i:4*i+2]
+            linestyle = '-' if t == 0 else ('-' if t == 10 else '-')
+            alpha_val = 0.9
+
+            rect = patches.Rectangle(
+                (center[0]-radius[0], center[1]-radius[1]),
+                2*radius[0], 2*radius[1],
+                edgecolor=box_color[int(t/10)], facecolor='none',
+                linestyle=linestyle, linewidth=3.3, alpha=alpha_val
+            )
+            ax.add_patch(rect)
+
+    ax.set_xlabel('X Position', fontsize=22)
+    ax.set_ylabel('Y Position', fontsize=22)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.2, linewidth=2.0)
+
+    legend_elements = [
+            Line2D([0], [0], color=box_color[0], linestyle='-', lw=2.5, label='Start Box'),
+            # Line2D([0], [0], color=box_color, linestyle='-', lw=2.5, label='Mid Box'),
+            Line2D([0], [0], color=box_color[1], linestyle='-', lw=2.5, label='End Box'),
+            Line2D([0], [0], color='#F1BE00', linestyle='--', lw=2.5, label='Distance'),
+            Line2D([0], [0], color=colors_traj[0], lw=3, label='Vehicle 1'),
+            Line2D([0], [0], color=colors_traj[1], lw=3, label='Vehicle 2')
+        ]
+
+    legend = fig.legend(
+        handles=legend_elements,
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.05),
+        ncol=2,
+        frameon=True,
+        edgecolor='black',
+        fancybox=False,
+        title_fontsize=18,
+        fontsize=16
+    )
+    legend.get_frame().set_linewidth(2.0)
+    legend.get_frame().set_edgecolor('black')
+
+    plt.subplots_adjust(bottom=0.15)
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
+
+    print("Finished plotting noisy trajectories")
+
+
+

@@ -80,7 +80,7 @@ box_check = [0, 5, 10]
 center_uav1 = (T+1)*[[0,0,0,0]]
 radius_uav1 = (T+1)*[[box_x,box_x,max_v,max_v]]
 center_uav1[box_check[0]] = [-3, -3, 0, 0]
-radius_uav1[box_check[0]] = [max_x0, max_x0, max_v0, max_v0]
+radius_uav1[box_check[0]] = [max_x0, 1, max_v0, max_v0]
 center_uav1[box_check[1]] = [3, -3, 0, 0]
 radius_uav1[box_check[1]] = [max_xe, max_xe, max_ve, max_ve]
 center_uav1[box_check[2]] = [3, 3, 0, 0]
@@ -149,7 +149,7 @@ vel_noise = 0.05
 ctrl_noise = 0.05
 RTH_opt_eps = 1e-8
 delta = 0.01
-rank_eps = 1e-5
+rank_eps = 1e-7
 N = 8
 
 w_scale = [pos_noise, pos_noise, vel_noise, vel_noise]*n_uwv
@@ -212,38 +212,37 @@ Poly_x = poly_intersect(Poly_x, Poly_comm_41_T)
 
 
 test_feas = True
+test_decentral_feas = False
 file = "simulation_results/simulationT10_4drones_relative.pickle"
 save = True
 
 if test_feas:
-    [result, SLS_test, Lambda] = swarm_optimize(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, RTH_opt_eps)
-    plot_swarm_trajectory(SLS_test, Poly_x, Poly_w, center_times, radius_times, T, n_uwv, "test_four_relative_trajectories.pdf")
-    swarm_communication_message_num(SLS_test.F, T, n_uwv, tol=1e-3)
-    # sys.exit()
+    _ = swarm_optimize(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, RTH_opt_eps)
 
+if test_decentral_feas:
+    _ = swarm_optimize_decentral_feasibility(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, RTH_opt_eps)
 
 
 ### SIMULATION #########################################################################################################
 
 key = 'Reweighted Nuclear Norm'
 start = time.time()
-optimize_RTH_output = swarm_optimize_RTH(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, RTH_opt_eps)
+optimize_RTH_output = swarm_optimize_RTH(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
 t1 = time.time() - start
 optimize_RTH_output.append(t1)
 
 
 
-print("begin offdiag three phi optimization")
-key = 'Offdiag Three Phis Constrain Phixx'
+key = 'Proposed Offdiag Result'
 start = time.time()
-optimize_offdiag_three_output = swarm_optimize_RTH_offdiag_three_phis_constrain_phixx_optimized_distributed(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N, delta, rank_eps, RTH_opt_eps)
+proposed_controller_output = swarm_optimize_proposed(A_list, B_list, C_list, delay, n_uwv, Poly_x, Poly_u, Poly_w, N=8, delta=0.01, rank_eps=1e-7, opt_eps=1e-8)
 t2 = time.time() - start
-optimize_offdiag_three_output.append(t2)
+proposed_controller_output.append(t2)
 
 
 data = {
 'Reweighted Nuclear Norm': optimize_RTH_output,
-'Offdiag Three Phis Constrain Phixx': optimize_offdiag_three_output
+'Proposed Offdiag Result': proposed_controller_output
 }
 
 with open(file,"wb") as f:
@@ -257,20 +256,10 @@ with open(file,"wb") as f:
 
 
 
-
-
-
-
-
-
-
-
-
-
 ### Print result #########################################################################################################
 
 
-### Baseline Controller
+## Baseline Controller
 
 simulation_data = pickle.load(open(file, "rb"))
 optimize_RTH_data = simulation_data['Reweighted Nuclear Norm']
@@ -281,12 +270,7 @@ Lambda_nuc = optimize_RTH_data[2]
 
 
 print()
-print("Delay time:", delay)
-print("--- Nuclear Norm -----------------------------------------------------")
-print("rank F:", np.linalg.matrix_rank(SLS_nuc.F_trunc, tol=rank_eps))
-print("band (D,E) = messages:", SLS_nuc.E.shape[0])
-print("message times:", np.array(SLS_nuc.F_causal_row_basis)//2)
-
+print("--- Baseline Communication Messages -----------------------------------------------------")
 print("max |K - K_trunc|:", np.max( np.abs(SLS_nuc.F - SLS_nuc.F_trunc) ) )
 print("max |Phi - Phi_trunc|:", np.max( np.abs(SLS_nuc.Phi_matrix.value - SLS_nuc.Phi_trunc) ) )
 Poly_xu = Poly_x.cart(Poly_u)
@@ -296,48 +280,28 @@ swarm_communication_message_num(SLS_nuc.F, T, n_uwv)
 print()
 
 
-Nuc_F_matrix = SLS_nuc.F
-save_sparsity_pattern(Nuc_F_matrix, "Nuc_F_matrix")
-Nuc_D_matrix = SLS_nuc.D
-save_sparsity_pattern(Nuc_D_matrix, "Nuc_D_matrix")
-Nuc_E_matrix = SLS_nuc.E
-save_sparsity_pattern(Nuc_E_matrix, "Nuc_E_matrix")
-Nuc_Phi_matrix = SLS_nuc.Phi_matrix.value
-save_sparsity_pattern(Nuc_Phi_matrix, "Nuc_Phi_matrix")
-Nuc_Phi_trunc = SLS_nuc.Phi_trunc
-save_sparsity_pattern(Nuc_Phi_trunc, "Nuc_Phi_trunc")
-
-
-
-
 
 
 ### Proposed Controller
 
 simulation_data = pickle.load(open(file, "rb"))
-offdiag_three_phis_data = simulation_data['Offdiag Three Phis Constrain Phixx']
-
-
-SLS_offdiag_three_Phi = offdiag_three_phis_data[1]
-time_three_Phi = offdiag_three_phis_data[-1]
+proposed_data = simulation_data['Proposed Offdiag Result']
+SLS_proposed = proposed_data[1]
 print()
-print("--- Proposed Controller ------------------------------------")
-print("Com time diagI:", time_three_Phi)
-SLS_offdiag_three_Phi.calculate_dependent_variables("Reweighted Nuclear Norm")
-SLS_offdiag_three_Phi.causal_factorization(rank_eps=rank_eps)
-print("rank F:", np.linalg.matrix_rank(SLS_offdiag_three_Phi.F_trunc, tol=rank_eps))
-print("band (D,E) = messages:", SLS_offdiag_three_Phi.E.shape[0])
-print("Error true F and truncated F:", np.max( np.abs(SLS_offdiag_three_Phi.F - SLS_offdiag_three_Phi.F_trunc) ) )
-print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_offdiag_three_Phi.Phi_matrix.value - SLS_offdiag_three_Phi.Phi_trunc) ) )
+print("--- Proposed Controller Communication Messages------------------------------------")
+SLS_proposed.calculate_dependent_variables("Reweighted Nuclear Norm")
+SLS_proposed.causal_factorization(rank_eps=rank_eps)
+print("Error true F and truncated F:", np.max( np.abs(SLS_proposed.F - SLS_proposed.F_trunc) ) )
+print("Error true Phi and truncated Phi:", np.max( np.abs(SLS_proposed.Phi_matrix.value - SLS_proposed.Phi_trunc) ) )
 
 plot_swarm_trajectory(
-    SLS_data=SLS_offdiag_three_Phi,
+    SLS_data=SLS_proposed,
     Poly_x=Poly_x,
     Poly_w=Poly_w,
     center_times=center_times,
     radius_times=radius_times,
     T=10,
     n_uwv=4,
-    save_path="controller4_T=10_UWV=4.pdf"
+    save_path="relative_4_proposed_trajectories.pdf"
 )
-swarm_communication_message_num(SLS_offdiag_three_Phi.F, T, n_uwv)
+swarm_communication_message_num(SLS_proposed.F, T, n_uwv)

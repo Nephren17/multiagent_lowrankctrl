@@ -74,19 +74,19 @@ class SLSFinite():
         Phi_ux: cvxpy.Variable, shape ((T+1)*nu, (T+1)*nx)
         Phi_uy: cvxpy.Variable, shape ((T+1)*nu, (T+1)*ny)
         """
-        # init variables
+    #### basic SLS objects ####################################################################
         assert len(A_list) == len(B_list) == len(C_list)
         # init basic contents
         self.A_list = A_list
         self.B_list = B_list
         self.C_list = C_list
-        # define dimanesions
+
         self.T = len(A_list) - 1
         self.delay = delay
         self.nx = A_list[0].shape[0]
         self.nu = B_list[0].shape[1]
         self.ny = C_list[0].shape[0]
-        # define optimization variables
+
         self.Phi_xx = low_block_tri_variable(self.nx, self.nx, self.T+1)
         if norm == None:
             self.Phi_uy = low_block_tri_variable(self.nu, self.ny, self.T+1)
@@ -147,6 +147,9 @@ class SLSFinite():
         SLP = [cp.bmat([[I - self.Z @ self.cal_A, -self.Z @ self.cal_B]]) @ self.Phi_matrix == cp.bmat([[I, np.zeros( (Tp1*self.nx, Tp1*self.ny) )]]),
                 self.Phi_matrix @ cp.bmat([[I - self.Z @ self.cal_A], [-self.cal_C]]) == cp.bmat([[I], [np.zeros( (Tp1*self.nu, Tp1*self.nx) )]])]
         return SLP
+
+
+    #### basic SLS operations ####################################################################
 
     def calculate_dependent_variables(self, key):
         """
@@ -228,41 +231,8 @@ class SLSFinite():
 
 
 
-    def extract_sub_communication_matrix(self, direction='21'):
-        Tplus1 = self.T + 1
-        block_row = 4
-        block_col = 4
 
-        big_mat = np.zeros((2*Tplus1, 2*Tplus1))
-
-        for t in range(Tplus1):
-            for tau in range(Tplus1):
-                row_start = t * block_row
-                col_start = tau * block_col
-                sub_4x4 = self.F[row_start : row_start+block_row,
-                                col_start : col_start+block_col]
-                
-                if direction == '21':
-                    sub_2x2 = sub_4x4[0:2, 2:4]
-                else:
-                    sub_2x2 = sub_4x4[2:4, 0:2]
-
-                big_mat[t*2 : (t+1)*2,  tau*2 : (tau+1)*2] = sub_2x2
-        return big_mat
-
-
-    def compute_communication_messages(self, rank_eps=1e-7):
-        L21 = self.extract_sub_communication_matrix(direction='21')
-        L12 = self.extract_sub_communication_matrix(direction='12')
-
-        rank_21 = np.linalg.matrix_rank(L21, tol=rank_eps)
-        rank_12 = np.linalg.matrix_rank(L12, tol=rank_eps)
-
-        return (rank_21, rank_12)
-
-
-
-
+    #### operations in Phi space ####################################################################
 
     def extract_offdiag_expr(self, direction='21'):
         Tplus1 = self.T + 1
@@ -289,28 +259,6 @@ class SLSFinite():
             sub_blocks.append(row_list)
         big_expr = cp.bmat(sub_blocks)  
         return big_expr
-
-
-    def compute_offdiag_rank_of_Phi(self, rank_eps=1e-7):
-        L1_mat = self.extract_offdiag_expr(direction='21')
-        if hasattr(L1_mat, 'value'):
-            L1_val = L1_mat.value
-            if L1_val is None:
-                raise ValueError("extract_offdiag_expr('21') => Expression has no .value? Check if solver ran.")
-        else:
-            L1_val = L1_mat
-        rank1 = np.linalg.matrix_rank(L1_val, tol=rank_eps)
-
-        L2_mat = self.extract_offdiag_expr(direction='12')
-        if hasattr(L2_mat, 'value'):
-            L2_val = L2_mat.value
-            if L2_val is None:
-                raise ValueError("extract_offdiag_expr('12') => Expression has no .value? Check if solver ran.")
-        else:
-            L2_val = L2_mat
-        rank2 = np.linalg.matrix_rank(L2_val, tol=rank_eps)
-
-        return rank1, rank2
 
 
     def extract_Phi_subcom_mat(self, direction='21'):
@@ -350,7 +298,6 @@ class SLSFinite():
 
                 big_mat_phiux[t*2 : (t+1)*2,  tau*4 : (tau+1)*4] = sub_2x4
 
-
         block_row = self.nx
         block_col = self.ny
         big_mat_phixy = np.zeros((4*Tplus1, 2*Tplus1))
@@ -368,6 +315,71 @@ class SLSFinite():
 
                 big_mat_phixy[t*4 : (t+1)*4,  tau*2 : (tau+1)*2] = sub_4x2
         return big_mat_phiuy, big_mat_phiux, big_mat_phixy
+
+
+
+
+
+    #### recording and print result ####################################################################
+
+    def extract_sub_communication_matrix(self, direction='21'):
+        Tplus1 = self.T + 1
+        block_row = 4
+        block_col = 4
+
+        big_mat = np.zeros((2*Tplus1, 2*Tplus1))
+
+        for t in range(Tplus1):
+            for tau in range(Tplus1):
+                row_start = t * block_row
+                col_start = tau * block_col
+                sub_4x4 = self.F[row_start : row_start+block_row,
+                                col_start : col_start+block_col]
+                
+                if direction == '21':
+                    sub_2x2 = sub_4x4[0:2, 2:4]
+                else:
+                    sub_2x2 = sub_4x4[2:4, 0:2]
+
+                big_mat[t*2 : (t+1)*2,  tau*2 : (tau+1)*2] = sub_2x2
+        return big_mat
+
+
+    def compute_communication_messages(self, rank_eps=1e-7):
+        L21 = self.extract_sub_communication_matrix(direction='21')
+        L12 = self.extract_sub_communication_matrix(direction='12')
+
+        rank_21 = np.linalg.matrix_rank(L21, tol=rank_eps)
+        rank_12 = np.linalg.matrix_rank(L12, tol=rank_eps)
+
+        return (rank_21, rank_12)
+
+
+
+
+    def compute_offdiag_rank_of_Phi(self, rank_eps=1e-7):
+        L1_mat = self.extract_offdiag_expr(direction='21')
+        if hasattr(L1_mat, 'value'):
+            L1_val = L1_mat.value
+            if L1_val is None:
+                raise ValueError("extract_offdiag_expr('21') => Expression has no .value? Check if solver ran.")
+        else:
+            L1_val = L1_mat
+        rank1 = np.linalg.matrix_rank(L1_val, tol=rank_eps)
+
+        L2_mat = self.extract_offdiag_expr(direction='12')
+        if hasattr(L2_mat, 'value'):
+            L2_val = L2_mat.value
+            if L2_val is None:
+                raise ValueError("extract_offdiag_expr('12') => Expression has no .value? Check if solver ran.")
+        else:
+            L2_val = L2_mat
+        rank2 = np.linalg.matrix_rank(L2_val, tol=rank_eps)
+
+        return rank1, rank2
+
+
+
 
     def display_message_row(self, rank_eps=1e-7, save_file="intermediate_results.npz"):
         L21 = self.extract_sub_communication_matrix(direction='21')

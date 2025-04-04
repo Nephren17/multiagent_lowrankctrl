@@ -1,4 +1,4 @@
-# A Low Rank Approach to Minimize Output Feedback Multi-Agent System with Delay under System Level Synthesis Framework
+# A Low Rank Approach to Minimize Output Feedback Multi-Agent System
 
 ## Setup
 
@@ -10,69 +10,19 @@ pip install -r requirements.txt
 
 ## Run
 
-To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Demonstrations", run the following commands.
+To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Demonstrations", run the following command:
 
 ```bash
-python3 simulation_two.py
+python3 simulation.py
 ```
 
-This is a task where two under water vehicles (uwv)  
+The figures and the file `simulationT20.pickle` containing the simulation data is saved in `simulation_results`.
+
+To run the code only reproducing the figures using the previously saved simulation data in `simulation_results/simulationT20.pickle`, run the following command:
 
 ```bash
-python3 simulation_four.py
+python3 plots.py
 ```
-
-The two commands above will respectively run the simulation task for two under water vehicles (UWV) and four uwvs. In the tasks,  UWVs need to plan their trajectory with delay and safe constraints.
-
-The figures and the file `simulationT10_joint.pickle` containing the simulation data is saved in `simulation_results`.
-
-
-
-## Functions
-
-`simulation_mutraul_detection.py` is the experiment for two UWV where one agent can see the x positions of two agents and the other can only see the two y positions
-
-`simulation_double_drone.py` is the experiment where one agent is with little control while the other have more.
-
-
-
-In `simulation_two.py`,
-
-- `offdiag_phiuy_only_data` is the optimization data with only `rank off-diag(phi_uy)` is optimized without other constraints.
-
-- `offdiag_phixx_constrained_data` is the optimization data with `phi_Xx` constrained to be off-diag sparse and optimize `rank off-diag(phi_uy)`.
-
-- `offdiag_three_phis_data` is the optimization data with `phi_Xx` constrained and optimize `rank off-diag(phi_uy) + rank off-diag(phi_ux) + rank off-diag(phi_xy)`.
-
-- `no_comm_data` is the data with `phi_xx, phi_xy, phi_ux, phi_uy` constrained to be off-diag sparse.
-
-
-
-In `SLSFinite.py`,
-
-- `extract_Phi_subcom_mat` and `extract_offdiag_expr` are used to get off-diag parts of phi matrix and K matrix.
-- `row_factorization_causal` is the function for calculating causal factorization for extracted sub-communication matrix.
-
-
-
-In `Functions.py`
-
-- `diagonal_identity_block_constraints_xx` and other diagonal constraints are constraints that kills off-diag part of phi matrix.
-- `zero_diag_blocks` is used to extract the elements in `Phi` that represent communication.
-- `time_delay_constraints` is used to add time delay constraints to `Phi`, and final controller K will also hold that delay pattern.
-
-
-
-In `simulation_four.py`,
-
-- This is a simulation designed for four uwv to chase each other.
-- It mainly used functions from functions`functions_swarm.py`
-
-
-
-
-
-
 
 ## Appendix
 
