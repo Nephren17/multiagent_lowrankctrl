@@ -1,5 +1,15 @@
 # Safe Control of Multi-Agent Systems with Minimal Communication
 
+This repository contains the code accompanying our IEEE CDC 2025 submission.
+
+The provided scripts reproduce the results presented in the Numerical Evaluation section of the paper. In particular, the code implements four experiments in which vehicles are required to start from an initial region (“start box”), remain within the safety constraints, and reach a designated terminal region (“end box”):
+- two vehicles, where one operates with small process noise while the other has large noise and limited control authority,
+- two vehicles, each having partial knowledge of its own state and partial information about the other vehicle,
+- two vehicles, where one vehicle has access to its absolute position while the other can only sense relative position,
+- four vehicles, where only one vehicle has absolute position information and the remaining three rely solely on relative sensing.
+In all scenarios, communication delays can be introduced and analyzed to study their effects on coordination and performance.
+
+
 ## Setup
 
  From the base directory of this repository, install dependencies with:
