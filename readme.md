@@ -2,6 +2,8 @@
 
 This repository contains the code accompanying our IEEE CDC 2025 submission.
 
+The paper can be found [here](https://web.eecs.umich.edu/~necmiye/pubs/YangYO_cdc25.pdf).
+
 The provided scripts reproduce the results presented in the Numerical Evaluation section of the paper. In particular, the code implements four experiments in which vehicles are required to start from an initial region (“start box”), remain within the safety constraints, and reach a designated terminal region (“end box”):
 - two vehicles, where one operates with small process noise while the other has large noise and limited control authority,
 - two vehicles, each having partial knowledge of its own state and partial information about the other vehicle,
