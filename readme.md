@@ -7,6 +7,7 @@ The provided scripts reproduce the results presented in the Numerical Evaluation
 - two vehicles, each having partial knowledge of its own state and partial information about the other vehicle,
 - two vehicles, where one vehicle has access to its absolute position while the other can only sense relative position,
 - four vehicles, where only one vehicle has absolute position information and the remaining three rely solely on relative sensing.
+
 In all scenarios, communication delays can be introduced and analyzed to study their effects on coordination and performance.
 
 
