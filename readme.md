@@ -21,26 +21,22 @@ pip install -r requirements.txt
 
 ## Run
 
-To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Demonstrations", run the following command:
+To run the code solving the optimization problems for the nuclear norm, sensor norm and actuator norm cases and reproducing the results and figures in section "Numerical Evaluation", run the following command:
 
 ```bash
-python3 simulation.py
+python3 simulation_four_relative.py
 ```
 
-The figures and the file `simulationT20.pickle` containing the simulation data is saved in `simulation_results`.
-
-To run the code only reproducing the figures using the previously saved simulation data in `simulation_results/simulationT20.pickle`, run the following command:
-
-```bash
-python3 plots.py
-```
+Other experiment can also be run in this way. The results and plots would be found in the corresponding folder.
 
 ## Appendix
 
 The following additional scripts are used by `simulation.py` and `plots.py`.
 
-1. `SLSFinite.py` defines a class `SLSFinite` storing the optimization variables and parameters of the optimization problems. Methods of `SLSFinite` compute system level synthesis constraint and the causal factorization of the optimal controller.
+1. `SLSFinite.py` and `Polytope.py` is directly from Aspeel's code.
 
-2. `Polytope.py` defines a class `Polytope` that allows taking products and powers of polytopes, which facilitates defining polytope containment constraints.
+2. `functions.py` defines the contraints and optimization of the problems.
 
-3. `functions.py` defines the functions solving the respective optimization problems in steps 1 and 2.
+3.  `functions_swarm.py` defines the functions that is used for cases with more than 2 agents.
+
+4.  `simulation_xxx.py` are the experiments we designed.
