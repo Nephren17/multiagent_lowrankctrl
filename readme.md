@@ -1,6 +1,6 @@
 # Safe Control of Multi-Agent Systems with Minimal Communication
 
-This repository contains the code accompanying our conference paper "Safe Control of Multi-Agent Systems with Minimal Communication" at IEEE CDC 2025 (Paper link: [[[https://web.eecs.umich.edu/~necmiye/pubs/YangYO_cdc25.pdf](https://arxiv.org/abs/2512.13021)](https://arxiv.org/abs/2512.13021)](https://web.eecs.umich.edu/~necmiye/pubs/YangYO_cdc25.pdf)). The code is based on the respository [(https://github.com/aaspeel/lowRankControl)](https://github.com/aaspeel/lowRankControl) by Antoine Aspeel.
+This repository contains the code accompanying our conference paper "Safe Control of Multi-Agent Systems with Minimal Communication" at IEEE CDC 2025 (Paper link: [(https://arxiv.org/abs/2512.13021)](https://arxiv.org/abs/2512.13021). The code is based on the respository [(https://github.com/aaspeel/lowRankControl)](https://github.com/aaspeel/lowRankControl) by Antoine Aspeel.
 
 The provided scripts reproduce the results presented in the Numerical Evaluation section of the paper. In particular, the code implements four experiments in which vehicles are required to start from an initial region (“start box”), remain within the safety constraints, and reach a designated terminal region (“end box”):
 - two vehicles, where one operates with small process noise while the other has large noise and limited control authority,
