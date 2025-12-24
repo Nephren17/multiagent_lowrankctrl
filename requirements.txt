@@ -1,0 +1,11 @@
+numpy>=1.24,<2.0
+scipy>=1.10,<2.0
+matplotlib>=3.7,<4.0
+cvxpy>=1.4,<2.0
+#
+# This project solves optimization problems via CVXPY using the MOSEK solver:
+#   problem.solve(solver=cp.MOSEK, ...)
+# You therefore need the MOSEK Python package AND a valid MOSEK license to run
+# the optimization as-is.
+mosek>=10.1,<11.0
+
